@@ -112,16 +112,19 @@ cipher_suites = {
 	0x1305: "TLS_AES_128_CCM_8_SHA256",
 	
 	# ChaCha20-Poly1305 cipher suites - RFC 7905
-   0xCCA8: "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
-   0xCCA9: "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
-   0xCCAA: "TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
-   0xCCAB: "TLS_PSK_WITH_CHACHA20_POLY1305_SHA256",
-   0xCCAC: "TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256",
-   0xCCAD: "TLS_DHE_PSK_WITH_CHACHA20_POLY1305_SHA256",
-   0xCCAE: "TLS_RSA_PSK_WITH_CHACHA20_POLY1305_SHA256",
+	0xCCA8: "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+	0xCCA9: "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+	0xCCAA: "TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+	0xCCAB: "TLS_PSK_WITH_CHACHA20_POLY1305_SHA256",
+	0xCCAC: "TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256",
+	0xCCAD: "TLS_DHE_PSK_WITH_CHACHA20_POLY1305_SHA256",
+	0xCCAE: "TLS_RSA_PSK_WITH_CHACHA20_POLY1305_SHA256",
 
-   # TLS Fallback Signaling cipher suites - RFC 7507
-   0x5600: "TLS_FALLBACK_SCSV",
+   # TLS Renegotiation indication cipher suite - RFC 5746
+    0x00FF: "TLS_EMPTY_RENEGOTIATION_INFO_SCSV",
+
+   # TLS Fallback Signaling cipher suite - RFC 7507
+	0x5600: "TLS_FALLBACK_SCSV",
    
    # TLS ECC-based cipher suites - RFC 4492 & 8422
 	0xC001: "TLS_ECDH_ECDSA_WITH_NULL_SHA",
@@ -166,12 +169,33 @@ cipher_suites = {
 	0x00A4: "TLS_DH_DSS_WITH_AES_128_GCM_SHA256",
 	0x00A5: "TLS_DH_DSS_WITH_AES_256_GCM_SHA384",
 	0x00A6: "TLS_DH_anon_WITH_AES_128_GCM_SHA256",
-	0x00A7: "TLS_DH_anon_WITH_AES_256_GCM_SHA384"
+	0x00A7: "TLS_DH_anon_WITH_AES_256_GCM_SHA384",
+
+    # TLS AES-GCM cipher suites with SHA-256/384 - RFC 5289
+    0xC023: "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",
+    0xC024: "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384",
+    0xC025: "TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256",
+    0xC026: "TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384",
+    0xC027: "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
+    0xC028: "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384",
+    0xC029: "TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256",
+    0xC02A: "TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384",
+    0xC02B: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+    0xC02C: "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+    0xC02D: "TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256",
+    0xC02E: "TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384",
+    0xC02F: "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+    0xC030: "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+    0xC031: "TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256",
+    0xC032: "TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384"
 }
 
 def get_cipher_suites(cipher_suites_array):
 	for cipher_suite in cipher_suites_array:
-		print("\t - " + cipher_suites[cipher_suite])
+		try:
+		    print("\t - " + cipher_suites[cipher_suite])
+		except:
+		    print("cipher_suite %r is unknown" % hex(cipher_suite))
 
 def get_compression_suites(compression_suites_array):
 	print("\t - %r" % compression_suites_array)
@@ -183,7 +207,10 @@ def get_handshake_type(handshake_type):
 	return handshake_types[handshake_type]
 
 def get_extension_type(extension_type):
-	return extension_types[extension_type]
+	try:
+		return extension_types[extension_type]
+	except:
+		print("extension %r is unknown" % hex(extension_type))
 
 #def tls_packet_get_header(tls_packet, offset):
 #	packet_version = int.from_bytes(tls_packet[1 : 1 + 2], 'big')
