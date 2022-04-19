@@ -12,25 +12,6 @@ tls_versions = {
 	0x0304: "TLSv1.3"
 }
 
-def get_tls_version(tls_version):
-	try:
-		return tls_versions[tls_version]
-	except:
-		print("tls_version %r is unknown" % hex(tls_version))
-
-content_types = {
-	20: "ChangeCipherSpec",
-	21: "Alert",
-	22: "Handshake",
-	23: "Application Data"
-}
-
-def get_content_type(content_type):
-	try:
-		return content_types[content_type]
-	except:
-		print("content_type %r is unknown" % hex(content_type))
-
 handshake_types = {
 	0: "HelloRequest",
 	1: "ClientHello",
@@ -49,11 +30,34 @@ handshake_types = {
 	254: "MessageHash"
 }
 
-def get_handshake_type(handshake_type):
-	try:
-		return handshake_types[handshake_type]
-	except:
-		print("handshake_type %r is unknown" % hex(handshake_type))
+extension_types = {
+	0: "server_name",
+	1: "max_fragment_length",
+	5: "status_request",
+	10: "supported_groups",
+	11: "ec_point_formats",
+	13: "signature_algorithms",
+	14: "use_srtp",
+	15: "heartbeat",
+	16: "application_layer_protocol_negotiation",
+	18: "signed_certificate_timestamp",
+	19: "client_certificate_type",
+	20: "server_certificate_type",
+	21: "padding",
+	23: "extended_master_secret",
+	35: "session_ticket",
+	41: "pre_shared_key",
+	42: "early_data",
+	43: "supported_versions",
+	44: "cookie",
+	45: "psk_key_exchange_modes",
+	47: "certificate_authorities",
+	48: "oid_filters",
+	49: "post_handshake_auth",
+	50: "signature_algorithms_cert",
+	51: "key_share",
+	65281: "renegotiation_info"
+}
 
 cipher_suites = {
 	0x0000: "TLS_NULL_WITH_NULL_NULL",
@@ -196,34 +200,11 @@ def get_cipher_suites(cipher_suites_array):
 def get_compression_suites(compression_suites_array):
 	print("\t - %r" % compression_suites_array)
 
-extension_types = {
-	0: "server_name",
-	1: "max_fragment_length",
-	5: "status_request",
-	10: "supported_groups",
-	11: "ec_point_formats",
-	13: "signature_algorithms",
-	14: "use_srtp",
-	15: "heartbeat",
-	16: "application_layer_protocol_negotiation",
-	18: "signed_certificate_timestamp",
-	19: "client_certificate_type",
-	20: "server_certificate_type",
-	21: "padding",
-	23: "extended_master_secret",
-	35: "session_ticket",
-	41: "pre_shared_key",
-	42: "early_data",
-	43: "supported_versions",
-	44: "cookie",
-	45: "psk_key_exchange_modes",
-	47: "certificate_authorities",
-	48: "oid_filters",
-	49: "post_handshake_auth",
-	50: "signature_algorithms_cert",
-	51: "key_share",
-	65281: "renegotiation_info"
-}
+def get_tls_version(tls_version):
+	return tls_versions[tls_version]
+
+def get_handshake_type(handshake_type):
+	return handshake_types[handshake_type]
 
 def get_extension_type(extension_type):
 	try:
@@ -231,8 +212,29 @@ def get_extension_type(extension_type):
 	except:
 		print("extension %r is unknown" % hex(extension_type))
 
-def parse_extension(hello_message, offset):
-	extension_total_len = int.from_bytes(hello_message[offset : offset + 2], 'big')
+#def tls_packet_get_header(tls_packet, offset):
+#	packet_version = int.from_bytes(tls_packet[1 : 1 + 2], 'big')
+#	packet_len = int.from_bytes(tls_packet[3 : 3 + 2], 'big')
+
+def tls_packet_get_header(tls_packet, offset):
+	packet_version = int.from_bytes(tls_packet[offset : offset + 2], 'big')
+	packet_len = int.from_bytes(tls_packet[offset + 2 : offset + 4], 'big')
+
+	return (packet_version, packet_len)
+
+def dissect_ccs_packet(tls_packet, index, offset, packet_len):
+	print("packet %r : change_cipher_spec" % index)
+	print("i can read %r %r" % (tls_packet[offset], tls_packet[offset+1]))
+	
+	offset += 1
+	
+	return offset
+
+def dissect_alert_packet(tls_packet, index, packet_len):
+	print("packet %r : alert" % index)
+
+def parse_extension(tls_packet, offset):
+	extension_total_len = int.from_bytes(tls_packet[offset : offset + 2], 'big')
 	offset += 2
 	
 	print("extension total length : %r" % extension_total_len)
@@ -240,15 +242,15 @@ def parse_extension(hello_message, offset):
 	remaining_len = extension_total_len
 	
 	while remaining_len > 0:
-		extension_type = int.from_bytes(hello_message[offset : offset + 2], 'big')
+		extension_type = int.from_bytes(tls_packet[offset : offset + 2], 'big')
 		remaining_len -= 2
 		offset += 2
 		
-		extension_len = int.from_bytes(hello_message[offset : offset + 2], 'big')
+		extension_len = int.from_bytes(tls_packet[offset : offset + 2], 'big')
 		remaining_len -= 2
 		offset += 2
 		
-		extension_content = hello_message[offset : offset + extension_len]
+		extension_content = tls_packet[offset : offset + extension_len]
 		
 		offset += extension_len
 		remaining_len -= extension_len
@@ -259,111 +261,35 @@ def parse_extension(hello_message, offset):
 		
 	return offset
 
-def dissect_certificates_chain(hello_message):
+def dissect_client_hello(tls_packet, index, offset):
 
-	offset = 0
-
-	certificate_count = 0
-	certificates_len = int.from_bytes(hello_message[offset : offset + 3], 'big')
-	offset += 3
-	remaining_len = certificates_len
-
-	print("certificates chain length : %r" % certificates_len)
-
-	while remaining_len > 0:
-		certificate_len = int.from_bytes(hello_message[offset : offset + 3], 'big')
-		offset += 3
-		remaining_len -= 3
-
-		certificate = hello_message[offset : offset + certificate_len]
-		print("certificate n°%r, %r bytes : %r" % (certificate_count, hex(certificate_len), certificate))
-
-		offset += certificate_len
-		remaining_len -= certificate_len
-
-		certificate_count += 1
-
-	print("read all the certificates ! ")
-
-	return offset
-
-#def dissect_server_key_exchange(hello_message):
-#
-#	server_key_exchange_len = int.from_bytes(hello_message[offset - 3 : offset], 'big')
-#	server_key_exchange = hello_message[offset : offset + server_key_exchange_len]
-#	offset += server_key_exchange_len
-#
-#	print("server_key_exchange_len length : %r" % server_key_exchange_len)
-#	print("server_key_exchange : %r" % server_key_exchange)
-#
-#	return offset
-
-# Parse the header of a TLS record
-# This header shall contain:
-# - 1 byte indicating the content type
-# - 2 bytes indicating the record version
-# - 2 bytes indicating the record length
-#
-def tls_packet_get_header(tls_packet, offset):
 	packet_version = int.from_bytes(tls_packet[offset : offset + 2], 'big')
-	packet_len = int.from_bytes(tls_packet[offset + 2 : offset + 4], 'big')
-	return (packet_version, packet_len)
-
-# Parse a ChangeCipherSpec record
-# Basically nothing to do
-#
-def dissect_ccs_record(tls_record):
-	print("  ChangeCipherSpec record")
-
-# Parse an Alarm record
-# Basically nothing to do
-#
-def dissect_alert_record(tls_record):
-	print("  Alarm record")
-
-# Parse the header of an handshake message
-# This header shall contain:
-# - 1 byte indicating the message type
-# - 3 bytes indicating the message length
-#
-def handshake_record_get_header(handshake_record, offset):
-	record_type = int.from_bytes(handshake_record[offset : offset + 1], 'big')
-	record_len = int.from_bytes(handshake_record[offset + 1 : offset + 4], 'big')
-	return (record_type, record_len)
-
-# Parse a ClientHello message
-#
-def dissect_client_hello(hello_message):
-
-	offset = 0
-
-	packet_version = int.from_bytes(hello_message[offset : offset + 2], 'big')
 	offset += 2
 	
-	random = hello_message[offset : offset + 32]
+	random = tls_packet[offset : offset + 32]
 	offset += 32
 	
-	session_id_len = hello_message[offset]
+	session_id_len = tls_packet[offset]
 	offset += 1
 
-	session_id = hello_message[offset : offset + session_id_len]
+	session_id = tls_packet[offset : offset + session_id_len]
 	offset += session_id_len
 	
-	cipher_suite_number = int.from_bytes(hello_message[offset : offset + 2], 'big') >> 1
+	cipher_suite_number = int.from_bytes(tls_packet[offset : offset + 2], 'big') >> 1
 	offset += 2
 
 	cipher_suites = []
 	for i in range(cipher_suite_number):
-		cipher_suite = int.from_bytes(hello_message[offset : offset + 2], 'big')
+		cipher_suite = int.from_bytes(tls_packet[offset : offset + 2], 'big')
 		cipher_suites.append(cipher_suite)
 		offset += 2
 
-	compression_suite_number = hello_message[offset]
+	compression_suite_number = tls_packet[offset]
 	offset += 1
 
 	compression_suites = []
 	for i in range(compression_suite_number):
-		compression_suite = hello_message[offset]
+		compression_suite = tls_packet[offset]
 		compression_suites.append(compression_suite)
 		offset += 1
 
@@ -381,35 +307,32 @@ def dissect_client_hello(hello_message):
 	print("ClientHello : %r CompressionSuites :" % compression_suite_number)
 	get_compression_suites(compression_suites)
 
-	parse_extension(hello_message, offset)
+	offset = parse_extension(tls_packet, offset)
+	return offset
 
-# Parse a ServerHello message
-#
-def dissect_server_hello(hello_message):
+def dissect_server_hello(tls_packet, index, offset):
 
-	offset = 0
-
-	packet_version = int.from_bytes(hello_message[offset : offset + 2], 'big')
+	packet_version = int.from_bytes(tls_packet[offset : offset + 2], 'big')
 	offset += 2
 	
-	random = hello_message[offset : offset + 32]
+	random = tls_packet[offset : offset + 32]
 	offset += 32
 	
-	session_id_len = hello_message[offset]
+	session_id_len = tls_packet[offset]
 	offset += 1
 
-	session_id = hello_message[offset : offset + session_id_len]
+	session_id = tls_packet[offset : offset + session_id_len]
 	offset += session_id_len
 	
-	cipher_suite = int.from_bytes(hello_message[offset : offset + 2], 'big')
+	cipher_suite = int.from_bytes(tls_packet[offset : offset + 2], 'big')
 	offset += 2
 
-	compression_suite_number = hello_message[offset]
+	compression_suite_number = tls_packet[offset]
 	offset += 1
 
 	compression_suites = []
 	for i in range(compression_suite_number):
-		compression_suite = hello_message[offset]
+		compression_suite = tls_packet[offset]
 		compression_suites.append(compression_suite)
 		offset += 1
 	
@@ -426,102 +349,106 @@ def dissect_server_hello(hello_message):
 	print("ClientHello : %r CompressionSuites :" % compression_suite_number)
 	get_compression_suites(compression_suites)
 
-	offset = parse_extension(hello_message, offset)
+	offset = parse_extension(tls_packet, offset)
 	return offset
 
-# Parse an Handshake record
-# - Note that an Handshake record can contain multiple handshake messages
-#
-def dissect_handshake_record(handshake_record):
-	print("  Handshake record")
+def dissect_certificate(tls_packet, index, offset):
 	
-	# record total length
-	record_len = len(handshake_record)
-
-	# absolute offset in record
-	offset = 0
+	certificate_count = 0
+	certificates_len = int.from_bytes(tls_packet[offset : offset + 3], 'big')
+	offset += 3
+	remaining_len = certificates_len
 	
-	# message counter
-	message_index = 0
+	print("certificates chain length : %r" % certificates_len)
+
+	while remaining_len > 0:
+		certificate_len = int.from_bytes(tls_packet[offset : offset + 3], 'big')
+		offset += 3
+		remaining_len -= 3
+		
+		certificate = tls_packet[offset : offset + certificate_len]
+		print("certificate n°%r, %r bytes : %r" % (certificate_count, hex(certificate_len), certificate))
+		
+		offset += certificate_len
+		remaining_len -= certificate_len	
+		
+		certificate_count += 1
+
+	print("read all the certificates ! ")
+
+	return offset
+
+def dissect_server_key_exchange(tls_packet, index, offset):
 	
-	while offset < record_len:
+	server_key_exchange_len = int.from_bytes(tls_packet[offset - 3 : offset], 'big')
+	server_key_exchange = tls_packet[offset : offset + server_key_exchange_len]
+	offset += server_key_exchange_len
+	
+	print("server_key_exchange_len length : %r" % server_key_exchange_len)
+	print("server_key_exchange : %r" % server_key_exchange)
 
-		# We shall have at least 4 bytes
-		# (content_type + length)
-		if (record_len - offset) < 4:
-			print("Error: The Handshake record is too short (%r remaining bytes)" % (record_len - offset))
-			exit(0)
+	return offset
 
-		(message_type, message_len) = handshake_record_get_header(handshake_record, offset)
-		offset += 4
+def dissect_client_key_exchange(tls_packet, index, offset):
 
-		print("  Handshake message n°%r:" % message_index)
-		print("  Handshake Type %r (%r)" % (message_type, get_handshake_type(message_type)))
-		print("  Message length : %r" % message_len)
+	client_key_exchange_len = int.from_bytes(tls_packet[offset - 3 : offset], 'big')
+	client_key_exchange = tls_packet[offset : offset + client_key_exchange_len]
+	offset += client_key_exchange_len
+	
+	print("client_key_exchange_len length : %r" % client_key_exchange_len)
+	print("client_key_exchange : %r" % client_key_exchange)
 
-		handshake_message = handshake_record[offset : offset + message_len]
-		print("handshake_message %r : %r" % (message_index, handshake_message))
-		offset += message_len
+	return offset
 
-		# process the Handshake message
-		# switch over the message_type
-		# case 1 - ClientHello
-		if message_type == 1:
-			dissect_client_hello(handshake_message)
-		# case 2 - ServerHello
-		elif message_type == 2:
-			dissect_server_hello(handshake_message)
-		# case 11 - Certificates
-		elif message_type == 11:
-			dissect_certificates_chain(handshake_message)
-		# case 12 - ServerKeyExchange
-		elif message_type == 12:
-			dissect_server_key_exchange(handshake_message)
-		# case 13 - CertificateRequest
-		elif message_type == 13:
-			dissect_certificate_request(handshake_message)
-		# case 14 - ServerHelloDone
-		elif message_type == 14:
-			dissect_server_hello_done(handshake_message)
-		# case 15 - CertificateVerify
-		elif message_type == 15:
-			dissect_certificate_verify(handshake_message)
-		# case 16 - ClientKeyExchange
-		elif message_type == 16:
-			dissect_client_key_exchange(handshake_message)
-		# case 20 - Finished
-		elif message_type == 20:
-			dissect_finished(handshake_message)
-		# case 24 - KeyUpdate
-		elif message_type == 24:
-			dissect_key_update(handshake_message)
-		# case 254 - MessageHash
-		elif message_type == 254:
-			dissect_message_hash(handshake_message)
-		# default case
-		else:
-			if message_index > 0:
-				print("Unknown handshake message (%r) - could be an encrypted handshake message" % message_type)
-			else:
-				print("This handshake message (%r) is not supported yet" % message_type)
-				return -1
+def dissect_server_hello_done(tls_packet, index, offset):
+	print("server_hello_done - nothing to do")
+	return offset
 
-		# increment the record counter
-		message_index += 1
+def dissect_handshake_by_type(tls_packet, index, handshake_type, offset, packet_len):
+	if handshake_type == 1:
+		return dissect_client_hello(tls_packet, index, offset)
+	elif handshake_type == 2:
+		return dissect_server_hello(tls_packet, index, offset)
+	elif handshake_type == 11:
+		return dissect_certificate(tls_packet, index, offset)
+	elif handshake_type == 12:
+		return dissect_server_key_exchange(tls_packet, index, offset)
+	elif handshake_type == 14:
+		return dissect_server_hello_done(tls_packet, index, offset)
+	elif handshake_type == 16:
+		return dissect_client_key_exchange(tls_packet, index, offset)
+	else:
+		print("This handshake message (%r) is not supported yet" % handshake_type)
+		return -1
 
-# Parse an Application record
-# Basically nothing to do
-#
-def dissect_application_record(tls_record):
-	print("  Application record")
+def dissect_handshake_packet(tls_packet, index, offset, packet_len):
+	print("packet %r : handshake" % index)
+	print("yyyy offset=%r packet_len=%r" % (offset, packet_len))
+	while offset < packet_len + 4:
+		handshake_type = tls_packet[offset]
+		offset += 1
+	
+		hanshake_len = int.from_bytes(tls_packet[offset : offset + 3], 'big')
+		offset += 3
+	
+		print("hanshake type : %r (%r)" % (handshake_type, get_handshake_type(handshake_type)))
+		print("hanshake message length : %r" % hanshake_len)
 
-# Check IP/TCP layer:
-# - IP4/IPv6 layer is mandatory
-# - TCP layer is mandatory
-# - Packet shall either be from client to server or from server to client
-#
-def check_tcpip_layer(packet, index):
-	# decide if the packet is from client or from server
+		offset = dissect_handshake_by_type(tls_packet, index, handshake_type, offset, packet_len)
+		print("sdlkdslkfj : offset %r " % offset)
+		
+		if offset < 0:
+			print("chelou")
+			exit()
+		
+	print("onskas")
+	return offset
+
+def dissect_data_packet(tls_packet, index):
+	print("packet %r : application data" % index)
+
+def dissect_tls_packet(packet, index):
+
 	if packet.haslayer(IP):
 		if packet[IP].src == addr_client and packet[IP].dst == addr_server:
 			print("client -> server")		
@@ -542,76 +469,40 @@ def check_tcpip_layer(packet, index):
 		print("Error: packet %r doesn't have any IP layer" % index)
 		exit(0)
 
-	# we shall have a TCP layer !
 	if not packet.haslayer(TCP):
-		print("Error: packet %r doesn't have any TCP layer" % index)
+		print("Error: packet %r doesn't have any UDP layer" % index)
 		exit(0)
 
-# loop over the TCP payload
-# to dissect all the TLS records
-#
-def dissect_tls_packet(packet, index):
-
-	# check IP&TCP layers
-	check_tcpip_layer(packet, index)
-
 	tls_packet = bytes(packet[TCP].payload)
-	tls_packet_len = len(tls_packet)
 
-	print("TLS packet %r, length %r" % (index, tls_packet_len))
-
-	# absolute offset in TCP payload
 	offset = 0
+
+	while offset < len(tls_packet):
 	
-	# record counter
-	record_index = 0
-
-	# loop over all TLS records in the packet
-	while offset < tls_packet_len:
-
-		# We shall have at least 5 bytes
-		# (content_type + version + length)
-		if (tls_packet_len - offset) < 5:
-			print("Error: The TLS record in packet n°%r is too short (%r remaining bytes)" % (index, tls_packet_len - offset))
-			exit(0)
-
-		# get the content type - 1 byte
 		tls_content_type = tls_packet[offset]
+		print("fff tls_content_type %r" % hex(tls_content_type))
 		offset += 1
 
-		# get the version (2 bytes) and the packet length (2 bytes)
-		(record_version, record_len) = tls_packet_get_header(tls_packet, offset)
+		(packet_version, packet_len) = tls_packet_get_header(tls_packet, offset)
 		offset += 4
-
-		print(" TLS packet n°%r, record n°%r :" % (index, record_index))
-		print(" packet version : %r (%r)" % (hex(record_version), get_tls_version(record_version)))
-		print(" tls_content_type %r" % get_content_type(tls_content_type))
-		print(" record length : %r" % record_len)
-
-		tls_record = tls_packet[offset : offset + record_len]
-		print(" tls_record %r : %r" % (record_index, tls_record))
-		offset += record_len
-
-		# process the TLS record
-		# switch over the tls_content_type
-		# case 1 - CCS
+	
+		#print("packet version : %r" % get_tls_version(packet_version))
+		print("packet version : %r" % hex(packet_version))
+		print("packet length : %r" % packet_len)
+	
 		if tls_content_type == 20:
-			dissect_ccs_record(tls_record)
-		# case 2 - Alert
+			offset = dissect_ccs_packet(tls_packet, index, offset, packet_len)
 		elif tls_content_type == 21:
-			dissect_alert_record(tls_record)
-		# case 3 - Handshake
+			dissect_alert_packet(tls_packet, index, offset, packet_len)
 		elif tls_content_type == 22:
-			dissect_handshake_record(tls_record)
-		# case 4 - Application Data
+			offset = dissect_handshake_packet(tls_packet, index, offset, packet_len)
+			print("hopla %r %r" %(packet_len, offset))
 		elif tls_content_type == 23:
-			dissect_application_record(tls_record)
-		# default case
+			dissect_data_packet(tls_packet, index, offset, packet_len)
 		else:
-			print("packet n°%r, record n°%r : unknown type (%r)" % (index, record_index, tls_content_type))
-
-		# increment the record counter
-		record_index += 1
+			print("packet %r : unknown type (%r)" % (index, hex(tls_content_type)))
+			#print("packet %r,  unknown type (%r), 
+	print("prout, offset : %r" % offset)
 
 	print("");
 
@@ -645,7 +536,6 @@ def main():
 
 	for i in range(len(pcap)):
 		dissect_tls_packet(pcap[i], i)
-	#dissect_tls_packet(pcap[1], 1)
 
 if __name__ == '__main__':
 	main()
