@@ -258,20 +258,25 @@ def tls_packet_get_header(tls_packet, offset):
 # - Packet shall either be from client to server or from server to client
 #
 def check_tcpip_layer(packet, index):
+
 	# decide if the packet is from client or from server
 	if packet.haslayer(IP):
 		if packet[IP].src == addr_client and packet[IP].dst == addr_server:
 			print("client -> server")
+			is_from_client = True
 		elif packet[IP].dst == addr_client and packet[IP].src == addr_server:
 			print("server -> client")
+			is_from_client = False
 		else:
 			print("Error: packet %r doesn't belong to the TLS stream" % index)
 			exit(0)
 	elif packet.haslayer(IPv6):
 		if packet[IPv6].src == addr_client and packet[IPv6].dst == addr_server:
 			print("client -> server")
+			is_from_client = True
 		elif packet[IPv6].dst == addr_client and packet[IPv6].src == addr_server:
 			print("server -> client")
+			is_from_client = False
 		else:
 			print("Error: packet %r doesn't belong to the TLS stream" % index)
 			exit(0)
@@ -292,10 +297,14 @@ def check_tcpip_layer(packet, index):
 # - Application (0x17)
 
 # Parse a ChangeCipherSpec record
-# Basically nothing to do
 #
 def dissect_ccs_record(tls_record):
 	print("  ChangeCipherSpec record")
+
+	if is_from_client == True:
+		client_finished_handshake = True
+	else:
+		server_finished_handshake = True
 
 # Parse an Alarm record
 # Basically nothing to do
@@ -361,6 +370,10 @@ def parse_extension(hello_message, offset):
 #
 def dissect_client_hello(hello_message):
 
+	# reinitialize session keys
+	client_finished_handshake = False
+	server_finished_handshake = False
+
 	offset = 0
 
 	packet_version = int.from_bytes(hello_message[offset : offset + 2], 'big')
@@ -414,6 +427,7 @@ def dissect_client_hello(hello_message):
 #
 def get_key_exchange_algorithm(selected_ciphersuite):
     ciphersuite_name = cipher_suites[selected_ciphersuite]
+    global key_exchange_algorithm
     key_exchange_algorithm = ciphersuite_name.split('_')[1] + "_" + ciphersuite_name.split('_')[2]
     return key_exchange_algorithm
 
@@ -502,12 +516,23 @@ def dissect_server_key_exchange(hello_message):
 
 	offset = 0
 
-	server_key_exchange_len = int.from_bytes(hello_message[offset - 3 : offset], 'big')
-	server_key_exchange = hello_message[offset : offset + server_key_exchange_len]
-	offset += server_key_exchange_len
+	if key_exchange_algorithm == "ECDHE_RSA":
+		print(key_exchange_algorithm)
+	elif key_exchange_algorithm == "DHE_DSS":
+		print(key_exchange_algorithm)
+	elif key_exchange_algorithm == "DHE_RSA":
+		print(key_exchange_algorithm)
+	elif key_exchange_algorithm == "RSA":
+		print(key_exchange_algorithm)
+	else:
+		print(key_exchange_algorithm)
 
-	print("server_key_exchange_len length : %r" % server_key_exchange_len)
-	print("server_key_exchange : %r" % server_key_exchange)
+	#server_key_exchange_len = int.from_bytes(hello_message[offset - 3 : offset], 'big')
+	#server_key_exchange = hello_message[offset : offset + server_key_exchange_len]
+	#offset += server_key_exchange_len
+
+	#print("server_key_exchange_len length : %r" % server_key_exchange_len)
+	#print("server_key_exchange : %r" % server_key_exchange)
 
 	return offset
 
@@ -516,6 +541,17 @@ def dissect_server_key_exchange(hello_message):
 def dissect_client_key_exchange(hello_message):
 
 	offset = 0
+
+	if key_exchange_algorithm == "ECDHE_RSA":
+		print(key_exchange_algorithm)
+	elif key_exchange_algorithm == "DHE_DSS":
+		print(key_exchange_algorithm)
+	elif key_exchange_algorithm == "DHE_RSA":
+		print(key_exchange_algorithm)
+	elif key_exchange_algorithm == "RSA":
+		print(key_exchange_algorithm)
+	else:
+		print(key_exchange_algorithm)
 
 	client_key_exchange_len = int.from_bytes(hello_message[offset - 3 : offset], 'big')
 	client_key_exchange = hello_message[offset : offset + client_key_exchange_len]
@@ -687,8 +723,19 @@ def dissect_tls_packet(packet, index):
 
 def main():
 
+	# global variables for client & server addresses
 	global addr_client
 	global addr_server
+
+	# global variables to check if handshake is finished
+	global client_finished_handshake
+	global server_finished_handshake
+
+	# global variable for the selected key exchange algorithm
+	global key_exchange_algorithm
+
+	# global variable set to True if message is client -> server
+	global is_from_client
 
 	parser = argparse.ArgumentParser()
 
@@ -696,6 +743,11 @@ def main():
 								required = True,
 								help = "TLS traffic to dissect.The pcap file. This pcap is supposed to contain only 1 TLS/TCP stream, and the 1st frame shall be the emitted by the client",
 								type = str)
+
+	#parser.add_argument("-M", "--master-secret",
+	#							required=False,
+	#							help="The pcap frames you want to replay/fuzz (examples: 2 ; 1,2,3,12 ; 0-10; 1,3,4-11. To replay all frames, enter '-'. By default, only the 1st frame (index 0) is replayed/fuzzed.",
+	#							type=str)
 
 	args = parser.parse_args()
 
@@ -712,6 +764,12 @@ def main():
 	else:
 		print("Error: first packet doesn't have any IP layer")
 		exit(0)
+
+	# by assumption, first packet is from client to server
+	is_from_client = True
+
+	# there is no key exchange algorithm at the very begining
+	key_exchange_algorithm = ""
 
 	for i in range(len(pcap)):
 		dissect_tls_packet(pcap[i], i)
