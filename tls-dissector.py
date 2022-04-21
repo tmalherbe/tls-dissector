@@ -250,6 +250,9 @@ key_exchange_algorithm = ""
 # global variable set to True if message is client -> server
 is_from_client = False
 
+# global variable for the selected TLS version
+selected_version = None
+
 def get_extension_type(extension_type):
 	try:
 		return extension_types[extension_type]
@@ -352,12 +355,20 @@ def handshake_record_get_header(handshake_record, offset):
 	return (record_type, record_len)
 
 def dissect_extension_supported_version(extension_content):
-    supported_versions_number = extension_content[0] >> 1
 
-    for i in range(supported_versions_number):
-        supported_version = int.from_bytes(extension_content[1 + 2*i : 1 + 2*i + 2], 'big')
+	global selected_version
 
-        print("\t\t - supported version n°%r : %r (%r)" % (i, hex(supported_version), get_tls_version(supported_version)))
+	supported_versions_number = extension_content[0] >> 1
+
+	for i in range(supported_versions_number):
+		supported_version = int.from_bytes(extension_content[1 + 2*i : 1 + 2*i + 2], 'big')
+
+		print("\t\t - supported version n°%r : %r (%r)" % (i, hex(supported_version), get_tls_version(supported_version)))
+
+		# if TLSv1.3, the content content of this extension in ServerHello
+		# Overrides the version number set in the ServerHello message
+		if is_from_client == False and supported_versions_number == 1:
+			selected_version = supported_version
 
 # Parse an extensions set
 #
@@ -469,8 +480,10 @@ def get_key_exchange_algorithm(selected_ciphersuite):
 def dissect_server_hello(hello_message):
 
 	offset = 0
+	global selected_version
 
 	packet_version = int.from_bytes(hello_message[offset : offset + 2], 'big')
+	selected_version = packet_version
 	offset += 2
 
 	random = hello_message[offset : offset + 32]
@@ -508,10 +521,13 @@ def dissect_server_hello(hello_message):
 	print("ServerHello - Selected CipherSuite : %r" % cipher_suites[selected_cipher_suite])
 	print("ServerHello - KeyExchangeAlgorithm : %r" % key_exchange_algorithm)
 
-	print("ClientHello : %r CompressionSuites :" % compression_suite_number)
+	print("ServerHello : %r CompressionSuites :" % compression_suite_number)
 	get_compression_suites(compression_suites)
 
 	offset = parse_extension(hello_message, offset)
+
+	print("ServerHello - Server selected %r" % get_tls_version(selected_version))
+
 	return offset
 
 # Parse an NewSessionTicket message
