@@ -10,7 +10,6 @@ from scapy.all import *
 # - handshake messages types
 # - cipher suites
 # - handshake messages extensions
-
 tls_versions = {
 	0x0301: "TLSv1.0",
 	0x0302: "TLSv1.1",
@@ -231,6 +230,26 @@ extension_types = {
 	65281: "renegotiation_info"
 }
 
+# Some global variables to handle SSL/TLS state-machine
+#
+# global variables for client & server addresses
+addr_client = ""
+addr_server = ""
+
+# global variable set to True when a ClientHello is seen
+# and set to False when handshake is finished
+handshake_has_started = False
+
+# global variables to check if handshake is finished
+client_finished_handshake = False
+server_finished_handshake = False
+
+# global variable for the selected key exchange algorithm
+key_exchange_algorithm = ""
+
+# global variable set to True if message is client -> server
+is_from_client = False
+
 def get_extension_type(extension_type):
 	try:
 		return extension_types[extension_type]
@@ -258,6 +277,8 @@ def tls_packet_get_header(tls_packet, offset):
 # - Packet shall either be from client to server or from server to client
 #
 def check_tcpip_layer(packet, index):
+
+	global is_from_client
 
 	# decide if the packet is from client or from server
 	if packet.haslayer(IP):
@@ -299,12 +320,18 @@ def check_tcpip_layer(packet, index):
 # Parse a ChangeCipherSpec record
 #
 def dissect_ccs_record(tls_record):
+
+	global client_finished_handshake
+	global server_finished_handshake
+
 	print("  ChangeCipherSpec record")
 
 	if is_from_client == True:
 		client_finished_handshake = True
+		print("Client has finished the handshake !")
 	else:
 		server_finished_handshake = True
+		print("Server has finished the handshake !")
 
 # Parse an Alarm record
 # Basically nothing to do
@@ -366,6 +393,11 @@ def parse_extension(hello_message, offset):
 
 	return offset
 
+# Parse an HelloRequest message
+#
+def dissect_hello_request(hello_message):
+    offset = 0
+
 # Parse a ClientHello message
 #
 def dissect_client_hello(hello_message):
@@ -373,6 +405,7 @@ def dissect_client_hello(hello_message):
 	# reinitialize session keys
 	client_finished_handshake = False
 	server_finished_handshake = False
+	handshake_has_started = True
 
 	offset = 0
 
@@ -452,7 +485,8 @@ def dissect_server_hello(hello_message):
 	selected_cipher_suite = int.from_bytes(hello_message[offset : offset + 2], 'big')
 	offset += 2
 
-	key_exchange_algorithm = get_key_exchange_algorithm(selected_cipher_suite)
+	#key_exchange_algorithm
+	get_key_exchange_algorithm(selected_cipher_suite)
 
 	compression_suite_number = hello_message[offset]
 	offset += 1
@@ -479,6 +513,21 @@ def dissect_server_hello(hello_message):
 
 	offset = parse_extension(hello_message, offset)
 	return offset
+
+# Parse an NewSessionTicket message
+#
+def dissect_new_session_ticket(hello_message):
+	offset = 0
+
+# Parse an EndOfEarlyData message
+#
+def dissect_end_of_early_data(hello_message):
+	offset = 0
+
+# Parse an EncryptedExtension message
+#
+def dissect_encrypted_extension(hello_message):
+	offset = 0
 
 # Parse a Certificate message
 #
@@ -571,6 +620,7 @@ def dissect_server_hello_done(tls_packet):
 # - Note that an Handshake record can contain multiple handshake messages
 #
 def dissect_handshake_record(handshake_record):
+
 	print("  Handshake record")
 	
 	# record total length
@@ -603,12 +653,24 @@ def dissect_handshake_record(handshake_record):
 
 		# process the Handshake message
 		# switch over the message_type
+		# case 0 - HelloRequest
+		if message_type == 0 and handshake_has_started:
+			dissect_hello_request(handshake_message)
 		# case 1 - ClientHello
-		if message_type == 1:
+		elif message_type == 1:
 			dissect_client_hello(handshake_message)
 		# case 2 - ServerHello
 		elif message_type == 2:
 			dissect_server_hello(handshake_message)
+		# case 4 - NewSessionTicket
+		elif message_type == 4:
+			dissect_new_session_ticket(handshake_message)
+		# case 5 - EndofEarlyData
+		elif message_type == 5:
+			dissect_end_of_early_data(handshake_message)
+		# case 8 - EncryptedExtension
+		elif message_type == 8:
+			dissect_encrypted_extension(handshake_message)
 		# case 11 - Certificates
 		elif message_type == 11:
 			dissect_certificates_chain(handshake_message)
@@ -638,7 +700,19 @@ def dissect_handshake_record(handshake_record):
 			dissect_message_hash(handshake_message)
 		# default case - can be an encrypted handshake message
 		else:
-			print("Unknown handshake message (%r) - could be an encrypted handshake message ?" % message_type)
+			# if the handshake message is weird and ChangeCipherSpec was seen,
+			# we consider we have an encrypted handshake
+			# and we skip the record
+			if (is_from_client and client_finished_handshake):
+			    print("Unknown handshake message (%r) from client - could be an encrypted handshake message ?" % message_type)
+			    offset += (record_len - 4)
+			elif server_finished_handshake:
+			    print("Unknown handshake message (%r) from server - could be an encrypted handshake message ?" % message_type)
+			    offset += (record_len - 4)
+			# if the handshake message is weird but no ChangeCipherSpec was seen,
+			# ...then the message is just weird
+			else:
+			    print("Unknown handshake message (%r) !" % message_type)
 
 		# increment the record counter
 		message_index += 1
@@ -723,20 +797,6 @@ def dissect_tls_packet(packet, index):
 
 def main():
 
-	# global variables for client & server addresses
-	global addr_client
-	global addr_server
-
-	# global variables to check if handshake is finished
-	global client_finished_handshake
-	global server_finished_handshake
-
-	# global variable for the selected key exchange algorithm
-	global key_exchange_algorithm
-
-	# global variable set to True if message is client -> server
-	global is_from_client
-
 	parser = argparse.ArgumentParser()
 
 	parser.add_argument("-p", "--pcap",
@@ -750,10 +810,12 @@ def main():
 	#							type=str)
 
 	args = parser.parse_args()
-
 	pcap_path = args.pcap
-
 	pcap = rdpcap(pcap_path)
+
+	global addr_client
+	global addr_server
+	global is_from_client
 
 	if pcap[0].haslayer(IP): 
 		addr_client = pcap[0][IP].src
