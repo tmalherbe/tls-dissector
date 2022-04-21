@@ -820,13 +820,16 @@ def main():
 								help = "TLS traffic to dissect.The pcap file. This pcap is supposed to contain only 1 TLS/TCP stream, and the 1st frame shall be the emitted by the client",
 								type = str)
 
-	#parser.add_argument("-M", "--master-secret",
-	#							required=False,
-	#							help="The pcap frames you want to replay/fuzz (examples: 2 ; 1,2,3,12 ; 0-10; 1,3,4-11. To replay all frames, enter '-'. By default, only the 1st frame (index 0) is replayed/fuzzed.",
-	#							type=str)
+	parser.add_argument("-k", "--keylogfile",
+								required=False,
+								help="The file containing master secret & crypto stuffs to decrypt the traffic. This file comes from openssl s_client --keylogfile",
+								type=str)
 
 	args = parser.parse_args()
+
 	pcap_path = args.pcap
+	keylogfile = args.keylogfile
+
 	pcap = rdpcap(pcap_path)
 
 	global addr_client
