@@ -192,6 +192,11 @@ cipher_suites = {
 	0xC032: "TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384"
 }
 
+def is_a_tls13_ciphersuite(cipher_suite):
+	if cipher_suite > 0x1300 and cipher_suite < 0x1306:
+		return True
+	return False
+
 def get_cipher_suites(cipher_suites_array):
 	for cipher_suite in cipher_suites_array:
 		try:
@@ -360,17 +365,29 @@ def dissect_extension_supported_version(extension_content):
 
 	global selected_version
 
-	supported_versions_number = extension_content[0] >> 1
+    # ClientHello - we can have several supported versions
+	if is_from_client == True:
+		supported_versions_number = extension_content[0] >> 1
 
-	for i in range(supported_versions_number):
-		supported_version = int.from_bytes(extension_content[1 + 2*i : 1 + 2*i + 2], 'big')
+		for i in range(supported_versions_number):
+			supported_version = int.from_bytes(extension_content[1 + 2*i : 1 + 2*i + 2], 'big')
 
-		print("\t\t - supported version n°%r : %r (%r)" % (i, hex(supported_version), get_tls_version(supported_version)))
+			print("\t\t - supported version n°%r : %r (%r)" % (i, hex(supported_version), get_tls_version(supported_version)))
+
+    # ServerHello - we shall have only one supported version
+	else:
+		supported_version_len =  extension_content[0]
+
+		# The server supported version shall be on two bytes
+		if len(extension_content) != 2:
+		    print("\t\t - ? supported version returned by the server is weird (len = %r)" % supported_version_len)
 
 		# if TLSv1.3, the content content of this extension in ServerHello
 		# Overrides the version number set in the ServerHello message
-		if is_from_client == False and supported_versions_number == 1:
-			selected_version = supported_version
+		supported_version = int.from_bytes(extension_content[0:2], 'big')
+		selected_version = supported_version
+
+		print("\t\t - Server supported version : %r (%r)" % (hex(supported_version), get_tls_version(supported_version)))
 
 # Parse an extensions set
 #
@@ -525,7 +542,9 @@ def dissect_server_hello(hello_message):
 		print("ServerHello - no SessionID")
 	
 	print("ServerHello - Selected CipherSuite : %r" % cipher_suites[selected_cipher_suite])
-	print("ServerHello - KeyExchangeAlgorithm : %r" % key_exchange_algorithm)
+
+	if is_a_tls13_ciphersuite(selected_cipher_suite) == False:
+		print("ServerHello - KeyExchangeAlgorithm : %r" % key_exchange_algorithm)
 
 	print("ServerHello : %r CompressionSuites :" % compression_suite_number)
 	get_compression_suites(compression_suites)
