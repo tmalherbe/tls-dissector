@@ -744,24 +744,56 @@ def dissect_handshake_record(handshake_record):
 def dissect_application_record(tls_record):
 	print("  Application record")
 
+
+# global variables to store piece of a TLS packet
+# in case this packet is fragmented into several
+# TCP packets
+#
+previous_packet_fragmented = None
+previous_offset = 0
+previous_tls_packet_index = 0
+previous_record_index = 0
+
 # loop over the TCP payload
 # to dissect all the TLS records
 #
 def dissect_tls_packet(packet, index):
 
+	global previous_packet_fragmented
+	global previous_offset
+	global previous_tls_packet_index
+	global previous_record_index
+
 	# check IP&TCP layers
 	check_tcpip_layer(packet, index)
 
 	tls_packet = bytes(packet[TCP].payload)
+
+	# record counter
+	record_index = 0
+
+	if previous_packet_fragmented != None:
+		print("TLS traffic is fragmented into several TCP packets")
+
+		# Concatenate the data current TCP packet
+		# at the end of data from previous TCP packet
+		tls_packet = previous_packet_fragmented + tls_packet
+
+		# TLS packet index is the same as for previous TCP packet
+		index = previous_tls_packet_index
+
+		# record counter initialized to value of previous record counter
+		record_index = previous_record_index
+
 	tls_packet_len = len(tls_packet)
 
 	print("TLS packet %r, length %r" % (index, tls_packet_len))
 
 	# absolute offset in TCP payload
-	offset = 0
-	
-	# record counter
-	record_index = 0
+	# if TLS packet is fragmented
+	# we initialize the 'offset' cursor where we stopped the analysis
+	# on the previous TCP packet
+	offset = previous_offset
 
 	# loop over all TLS records in the packet
 	while offset < tls_packet_len:
@@ -787,7 +819,12 @@ def dissect_tls_packet(packet, index):
 
 		if (tls_packet_len - offset < record_len):
 			print("TLS packet seems to be fragmented across several TCP segments...")
-			exit(0)
+
+			previous_packet_fragmented = tls_packet
+			previous_offset = offset - 5
+			previous_tls_packet_index = index
+			previous_record_index = record_index
+			break
 
 		tls_record = tls_packet[offset : offset + record_len]
 		print(" tls_record %r : %r" % (record_index, tls_record))
@@ -843,7 +880,11 @@ def main():
 	pcap_path = args.pcap
 	keylogfile = args.keylogfile
 
-	pcap = rdpcap(pcap_path)
+	try:
+		pcap = rdpcap(pcap_path)
+	except:
+		print("a problem occured while opening %r" % pcap_path)
+		exit(0)
 
 	global addr_client
 	global addr_server
