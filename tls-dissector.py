@@ -814,6 +814,14 @@ def dissect_tls_packet(packet, index):
 		# increment the record counter
 		record_index += 1
 
+		# Reaching the end of the record means
+		# fragmentation is finished - if any
+		if offset == tls_packet_len:
+			previous_offset = 0
+			previous_packet_fragmented = None
+			previous_tls_packet_index = 0
+			previous_record_index = 0
+
 	print("");
 
 def main():
