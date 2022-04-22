@@ -215,6 +215,7 @@ extension_types = {
 	19: "client_certificate_type",
 	20: "server_certificate_type",
 	21: "padding",
+	22: "encrypted_then_mac",
 	23: "extended_master_secret",
 	35: "session_ticket",
 	41: "pre_shared_key",
