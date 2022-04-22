@@ -415,6 +415,10 @@ def dissect_hello_request(hello_message):
 def dissect_client_hello(hello_message):
 
 	# reinitialize session keys
+	global client_finished_handshake
+	global server_finished_handshake
+	global handshake_has_started
+
 	client_finished_handshake = False
 	server_finished_handshake = False
 	handshake_has_started = True
