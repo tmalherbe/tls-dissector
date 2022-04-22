@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+import base64
 from scapy.all import *
 
 # several enums & their getters:
@@ -550,6 +551,20 @@ def dissect_end_of_early_data(hello_message):
 def dissect_encrypted_extension(hello_message):
 	offset = 0
 
+# returns a base64-nicely-encoded certificate
+#
+def dump_b64_cert(certificate):
+	b64_cert_raw = base64.b64encode(certificate)
+	b64_cert = ""
+	i = 0
+
+	while i < len(b64_cert_raw):
+		b64_cert_chunk = b64_cert_raw[i : i + 64]
+		b64_cert += b64_cert_chunk.decode('ascii')
+		b64_cert += "\n"
+		i += 64
+	return b64_cert
+
 # Parse a Certificate message
 #
 def dissect_certificates_chain(hello_message):
@@ -569,7 +584,7 @@ def dissect_certificates_chain(hello_message):
 		remaining_len -= 3
 
 		certificate = hello_message[offset : offset + certificate_len]
-		print("certificate n°%r, %r bytes : %r" % (certificate_count, hex(certificate_len), certificate))
+		print("certificate n°%r, %r (%r) bytes : \n%s" % (certificate_count, certificate_len, hex(certificate_len), dump_b64_cert(certificate)))
 
 		offset += certificate_len
 		remaining_len -= certificate_len
