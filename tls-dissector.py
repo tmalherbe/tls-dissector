@@ -237,6 +237,12 @@ extension_types = {
 	65281: "renegotiation_info"
 }
 
+def get_extension_type(extension_type):
+	try:
+		return extension_types[extension_type]
+	except:
+		print("extension %r is unknown" % hex(extension_type))
+
 # Some global variables to handle SSL/TLS state-machine
 #
 # global variables for client & server addresses
@@ -260,11 +266,9 @@ is_from_client = False
 # global variable for the selected TLS version
 selected_version = None
 
-def get_extension_type(extension_type):
-	try:
-		return extension_types[extension_type]
-	except:
-		print("extension %r is unknown" % hex(extension_type))
+# global variable for the cryptographic material generation
+client_random = None
+server_random = None
 
 # Some general purpose functions to :
 # - Check if the TLS packet is client->server, server->client or Out Of Blue
@@ -432,14 +436,18 @@ def dissect_hello_request(hello_message):
 #
 def dissect_client_hello(hello_message):
 
-	# reinitialize session keys
+	# reinitialize session state
 	global client_finished_handshake
 	global server_finished_handshake
 	global handshake_has_started
+	global client_random
+	global server_random
 
 	client_finished_handshake = False
 	server_finished_handshake = False
 	handshake_has_started = True
+	client_random = None
+	server_random = None
 
 	offset = 0
 
@@ -447,6 +455,7 @@ def dissect_client_hello(hello_message):
 	offset += 2
 	
 	random = hello_message[offset : offset + 32]
+	client_random = random
 	offset += 32
 	
 	session_id_len = hello_message[offset]
@@ -504,12 +513,14 @@ def dissect_server_hello(hello_message):
 
 	offset = 0
 	global selected_version
+	global server_random
 
 	packet_version = int.from_bytes(hello_message[offset : offset + 2], 'big')
 	selected_version = packet_version
 	offset += 2
 
 	random = hello_message[offset : offset + 32]
+	server_random = random
 	offset += 32
 
 	session_id_len = hello_message[offset]
@@ -851,6 +862,8 @@ def dissect_tls_packet(packet, index):
 		print(" tls_content_type %r" % get_content_type(tls_content_type))
 		print(" record length : %r" % record_len)
 
+		# if fragmentation is detected we stop the analysis
+		# and store the analysis state for the next packet
 		if (tls_packet_len - offset < record_len):
 			print("TLS packet seems to be fragmented across several TCP segments...")
 
@@ -905,21 +918,23 @@ def main():
 								type = str)
 
 	parser.add_argument("-k", "--keylogfile",
-								required=False,
-								help="The file containing master secret & crypto stuffs to decrypt the traffic. This file comes from openssl s_client --keylogfile",
-								type=str)
+								required = False,
+								help = "The file containing master secret & crypto stuffs to decrypt the traffic. This file comes from openssl s_client --keylogfile",
+								type = str)
 
 	args = parser.parse_args()
 
 	pcap_path = args.pcap
 	keylogfile = args.keylogfile
 
+	# open the pcap
 	try:
 		pcap = rdpcap(pcap_path)
 	except:
 		print("a problem occured while opening %r" % pcap_path)
 		exit(0)
 
+	# get the client & server IP addresses
 	global addr_client
 	global addr_server
 	global is_from_client
