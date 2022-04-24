@@ -3,6 +3,10 @@
 
 import argparse
 import base64
+import binascii
+
+from Cryptodome.Hash import HMAC as hmac, MD5
+
 from scapy.all import *
 
 # several enums & their getters:
@@ -294,6 +298,78 @@ selected_version = None
 # global variable for the cryptographic material generation
 client_random = None
 server_random = None
+master_secret = None
+
+# global variable to store the keylogfile name
+keylogfile = None
+
+# Functions to compute session keys from master_secret
+#
+def P_MD5(secret, seed):
+
+	print("%r %r" % (secret, seed))
+	h = hmac.new(secret, digestmod = MD5)
+
+	h.update(seed)
+	z = h.digest()
+	print("z : %r" % z)
+
+	A = []
+	A.append(seed)
+	
+	for i in range(10):
+		h = hmac.new(secret, digestmod = MD5)
+		h.update(seed)
+		A_i = h.digest()
+		print("A[%r] : %r" % (i, A_i))
+		#A.append(A_i)
+
+	#h = hmac.new(secret, digestmod = MD5)
+	#for i in range(10):
+		
+
+def derivate_crypto_material():
+
+	if keylogfile != None and selected_version != None:
+		print("going to generate crypto material for %r from %r" % (get_tls_version(selected_version), keylogfile))
+
+		if client_random == None or server_random == None:
+			print("client_random or server_random wasn't set !")
+			return
+
+		try:
+			fd = open(keylogfile, "r")
+		except:
+			print("could not open %r" % keylogfile)
+			return
+
+		keyfilecontent = fd.readlines()		
+		if len(keyfilecontent) < 2:
+			print("Error - %r is corrupted" % keylogfile)
+			fd.close()
+			return
+
+		keyline = keyfilecontent[1]
+
+		keyline_token = keyline.split(' ')
+		if len(keyline_token) < 3:
+			print("Error - %r is corrupted" % keylogfile)
+			fd.close()
+			return
+
+		master_secret_hex_raw = keyline_token[2]
+		master_secret_hex = master_secret_hex_raw.strip()
+		master_secret = binascii.unhexlify(master_secret_hex)
+		fd.close()
+
+		if len(master_secret) != 48:
+			print("Error - master secret is weird %r" % master_secret)
+			return
+
+		print("master_secret : %r\n" % master_secret)
+
+def decrypt_application_data(message):
+	print("")
 
 # Some general purpose functions to :
 # - Check if the TLS packet is client->server, server->client or Out Of Blue
@@ -371,6 +447,9 @@ def dissect_ccs_record(tls_record):
 	else:
 		server_finished_handshake = True
 		print("Server has finished the handshake !")
+
+	if client_finished_handshake and server_finished_handshake:
+		derivate_crypto_material()
 
 # Parse an Alarm record
 # Basically nothing to do
@@ -702,6 +781,13 @@ def dissect_client_key_exchange(hello_message):
 
 	return offset
 
+# Parse a Finished message
+#
+def dissect_finished(hello_message):
+
+	offset = 0
+	return offset
+
 # Parse a ServerHelloDone message
 #
 def dissect_server_hello_done(tls_packet):
@@ -935,6 +1021,12 @@ def dissect_tls_packet(packet, index):
 
 def main():
 
+	secret = b'\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b'
+	seed = b'Hi There'
+
+	P_MD5(secret, seed)
+	exit(0)
+
 	parser = argparse.ArgumentParser()
 
 	parser.add_argument("-p", "--pcap",
@@ -950,7 +1042,6 @@ def main():
 	args = parser.parse_args()
 
 	pcap_path = args.pcap
-	keylogfile = args.keylogfile
 
 	# open the pcap
 	try:
@@ -980,6 +1071,11 @@ def main():
 	# there is no key exchange algorithm at the very begining
 	key_exchange_algorithm = ""
 
+	# set the keylogfile if any
+	global keylogfile
+	keylogfile = args.keylogfile
+
+	# let's dissect every packet in the pcap !
 	for i in range(len(pcap)):
 		dissect_tls_packet(pcap[i], i)
 
