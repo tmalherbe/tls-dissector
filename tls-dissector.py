@@ -305,28 +305,54 @@ keylogfile = None
 
 # Functions to compute session keys from master_secret
 #
-def P_MD5(secret, seed):
 
-	print("%r %r" % (secret, seed))
-	h = hmac.new(secret, digestmod = MD5)
+def xor(x, y):
+    return bytes(a ^ b for a, b in zip(x, y))
 
-	h.update(seed)
-	z = h.digest()
-	print("z : %r" % z)
-
+def P_MD5(secret, seed, n):
+	print("P_MD5(%r, %r, %r)" % (secret, seed, n))
 	A = []
 	A.append(seed)
-	
-	for i in range(10):
-		h = hmac.new(secret, digestmod = MD5)
-		h.update(seed)
-		A_i = h.digest()
-		print("A[%r] : %r" % (i, A_i))
-		#A.append(A_i)
 
-	#h = hmac.new(secret, digestmod = MD5)
-	#for i in range(10):
-		
+	p_hash = b''
+
+	for i in range(n):
+		h = hmac.new(secret, digestmod = MD5)
+		h.update(A[i])
+		A_i = h.digest()
+		A.append(A_i)
+		print(A[i])
+		print(type(A[i]))
+		p_hash += A_i
+
+	return p_hash
+
+def P_SHA1(secret, seed, n):
+	print("P_SHA1(%r, %r, %r)" % (secret, seed, n))
+	A = []
+	A.append(seed)
+
+	p_hash = b''
+
+	for i in range(n):
+		h = hmac.new(secret, digestmod = SHA1)
+		h.update(A[i])
+		A_i = h.digest()
+		A.append(A_i)
+		p_hash += A_i
+
+	return p_hash
+
+def PRF(secret, label, seed):
+    l = len(secret)
+
+    S1 = secret[:l//2]
+    S2 = secret[l//2:]
+
+    p_md5 = P_MD5(S1, label + seed, 10)
+    p_sha1 = P_SHA1(S2, label + seed, 8)
+
+    return xor(p_md5, p_sha1)
 
 def derivate_crypto_material():
 
@@ -1024,7 +1050,7 @@ def main():
 	secret = b'\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b'
 	seed = b'Hi There'
 
-	P_MD5(secret, seed)
+	P_MD5(secret, seed, 10)
 	exit(0)
 
 	parser = argparse.ArgumentParser()
