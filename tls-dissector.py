@@ -326,6 +326,9 @@ key_block = None
 # global variable to store the keylogfile name
 keylogfile = None
 
+is_first_block = True
+last_iv = None
+
 # Functions to compute session keys from master_secret
 #
 
@@ -528,9 +531,6 @@ def derivate_crypto_material():
 
 		seed = server_random + client_random
 		key_block = PRF(master_secret, b'key expansion', seed)
-
-def decrypt_application_data(message):
-	print("")
 
 # Some general purpose functions to :
 # - Check if the TLS packet is client->server, server->client or Out Of Blue
@@ -1061,13 +1061,27 @@ def dissect_handshake_record(handshake_record):
 def dissect_application_record(tls_record):
 	print("  Application record")
 
+	global is_first_block
+	global last_iv
+
 	if key_block != None:
 		if is_from_client == True:
 			enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
-			iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen]
+			if is_first_block:
+				iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen]
+				is_first_block = False
+			else:
+				iv = last_iv
 		elif is_from_client == False:
 			enc_key = key_block[2 * mac_algorithm_keylen + cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen]
-			iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_ivlen]
+			if is_first_block:
+				iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_ivlen]
+				is_first_block = False
+			else:
+				iv = last_iv
+
+		print("iv : %r len(iv) %r" % (iv, len(iv)))
+		#iv = b'\x8c\xeb\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 
 		cipher = AES.new(enc_key, AES.MODE_CBC, iv)
 		try:
@@ -1075,7 +1089,8 @@ def dissect_application_record(tls_record):
 			print("  Decrypted data: %r" % plaintext)
 		except ValueError:
 			print("  Decryption error !")
-		#plaintext = cipher.decrypt(tls_record)
+
+		last_iv = tls_record[-16:]
 
 # global variables to store piece of a TLS packet
 # in case this packet is fragmented into several
