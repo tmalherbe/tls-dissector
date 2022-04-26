@@ -5,7 +5,9 @@ import argparse
 import base64
 import binascii
 
-from Cryptodome.Hash import HMAC as hmac, MD5
+from Cryptodome.Hash import HMAC as hmac, MD5, SHA1
+from Cryptodome.Cipher import AES
+from Cryptodome.Util.Padding import unpad
 
 from scapy.all import *
 
@@ -76,10 +78,10 @@ cipher_suites = {
 	0x0002: "TLS_RSA_WITH_NULL_SHA",
 	0x0004: "TLS_RSA_WITH_RC4_128_MD5",
 	0x0005: "TLS_RSA_WITH_RC4_128_SHA",
-	0x0006:	"TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5",
-	0x0007:	"TLS_RSA_WITH_IDEA_CBC_SHA",
-	0x0008:	"TLS_RSA_EXPORT_WITH_DES40_CBC_SHA",
-	0x0009:	"TLS_RSA_WITH_DES_CBC_SHA",
+	0x0006: "TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5",
+	0x0007: "TLS_RSA_WITH_IDEA_CBC_SHA",
+	0x0008: "TLS_RSA_EXPORT_WITH_DES40_CBC_SHA",
+	0x0009: "TLS_RSA_WITH_DES_CBC_SHA",
 	0x000A: "TLS_RSA_WITH_3DES_EDE_CBC_SHA",
 	0x002F: "TLS_RSA_WITH_AES_128_CBC_SHA",
 	0x0035: "TLS_RSA_WITH_AES_256_CBC_SHA",
@@ -94,8 +96,8 @@ cipher_suites = {
 	0x000B: "TLS_DH_DSS_EXPORT_WITH_DES40_CBC_SHA",
 	0x000C: "TLS_DH_DSS_WITH_DES_CBC_SHA",
 	0x000D: "TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA",
-	0x000E:	"TLS_DH_RSA_EXPORT_WITH_DES40_CBC_SHA",
-	0x000F:	"TLS_DH_RSA_WITH_DES_CBC_SHA",
+	0x000E: "TLS_DH_RSA_EXPORT_WITH_DES40_CBC_SHA",
+	0x000F: "TLS_DH_RSA_WITH_DES_CBC_SHA",
 	0x0010: "TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA",
 	0x0030: "TLS_DH_DSS_WITH_AES_128_CBC_SHA",
 	0x0031: "TLS_DH_RSA_WITH_AES_128_CBC_SHA",
@@ -289,6 +291,24 @@ server_finished_handshake = False
 # global variable for the selected key exchange algorithm
 key_exchange_algorithm = ""
 
+# global variable for the selected ciphersuite
+selected_cipher_suite = 0x0000
+
+# global variable for the selected encryption algorithm
+cipher_algorithm = ""
+
+# global variable for the selected mac algorithm
+mac_algorithm = ""
+
+# global variable for the selected encryption algorithm keylen
+cipher_algorithm_keylen = 0
+
+# global variable for the selected encryption algorithm ivlen
+cipher_algorithm_ivlen = 0
+
+# global variable for the selected mac algorithm keylen
+mac_algorithm_keylen = 0
+
 # global variable set to True if message is client -> server
 is_from_client = False
 
@@ -300,34 +320,129 @@ client_random = None
 server_random = None
 master_secret = None
 
+# global variable for the cryptographic material
+key_block = None
+
 # global variable to store the keylogfile name
 keylogfile = None
 
 # Functions to compute session keys from master_secret
 #
 
+def get_cipher_algo():
+	global selected_cipher_suite
+	global cipher_algorithm
+
+	cipher_suite_name = cipher_suites[selected_cipher_suite]
+	#print(cipher_suite_name)
+	
+	if cipher_suite_name.find('AES_128_CBC') != -1:
+		cipher_algorithm = "AES_128_CBC"
+	elif cipher_suite_name.find('AES_256_CBC') != -1:
+		cipher_algorithm = "AES_256_CBC"
+	elif cipher_suite_name.find('AES_128_GCM') != -1:
+		cipher_algorithm = "AES_128_GCM"
+	elif cipher_suite_name.find('AES_256_GCM') != -1:
+		cipher_algorithm = "AES_256_GCM"
+	elif cipher_suite_name.find('AES_128_CCM') != -1:
+		cipher_algorithm = "AES_128_CCM"
+	elif cipher_suite_name.find('AES_256_CCM') != -1:
+		cipher_algorithm = "AES_256_CCM"
+	elif cipher_suite_name.find('CHACHA20_POLY1305') != -1:
+		cipher_algorithm = "CHACHA20_POLY1305"
+	else:
+		cipher_algorithm = ""
+		print("%r is not supported, too bad" % cipher_suite_name)
+
+def get_mac_algo():
+	global selected_cipher_suite
+	global mac_algorithm
+
+	cipher_suite_name = cipher_suites[selected_cipher_suite]
+
+	if cipher_suite_name.find('SHA256') != -1:
+		mac_algorithm = "SHA256"
+	elif cipher_suite_name.find('SHA384') != -1:
+		mac_algorithm = "SHA384"
+	elif cipher_suite_name.find('SHA') != -1:
+		mac_algorithm = "SHA"
+	else:
+		mac_algorithm = ""
+		print("%r is not supported, too bad" % cipher_suite_name)
+
+def get_cipher_algo_keylen():
+	global cipher_algorithm
+	global cipher_algorithm_keylen
+
+	if cipher_algorithm == "AES_128_CBC":
+		cipher_algorithm_keylen = 16
+	elif cipher_algorithm == "AES_256_CBC":
+		cipher_algorithm_keylen = 32
+
+def get_cipher_algo_ivlen():
+	global cipher_algorithm
+	global cipher_algorithm_ivlen
+
+	if cipher_algorithm == "AES_128_CBC" or cipher_algorithm == "AES_256_CBC":
+		cipher_algorithm_ivlen = 16
+
+def get_mac_algo_keylen():
+	global mac_algorithm
+	global mac_algorithm_keylen
+
+	if mac_algorithm == "SHA384":
+		mac_algorithm_keylen = 48
+	elif mac_algorithm == "SHA256":
+		mac_algorithm_keylen = 32
+	elif mac_algorithm == "SHA":
+		mac_algorithm_keylen = 20
+
+# Get the key exchange algorithm from the the selected CipherSuite
+#
+def get_key_exchange_algorithm(selected_ciphersuite):
+    ciphersuite_name = cipher_suites[selected_ciphersuite]
+    global key_exchange_algorithm
+    key_exchange_algorithm = ciphersuite_name.split('_')[1] + "_" + ciphersuite_name.split('_')[2]
+    return key_exchange_algorithm
+
 def xor(x, y):
-    return bytes(a ^ b for a, b in zip(x, y))
+	if len(x) != len(y):
+		print("error, x and y don't have the same length");
+		exit(0)
+	return bytes(a ^ b for a, b in zip(x, y))
 
 def P_MD5(secret, seed, n):
+	print("")
 	print("P_MD5(%r, %r, %r)" % (secret, seed, n))
+
 	A = []
+
+	# A[0] = seed
 	A.append(seed)
 
 	p_hash = b''
 
 	for i in range(n):
+
+		# A[i + 1] = HMAC(secret, A[i])
 		h = hmac.new(secret, digestmod = MD5)
 		h.update(A[i])
-		A_i = h.digest()
-		A.append(A_i)
-		print(A[i])
-		print(type(A[i]))
-		p_hash += A_i
+		A_i_plus = h.digest()
+		A.append(A_i_plus)
+		#p_hash += A_i_plus
+
+	#for i in range(len(A)):
+	#	print("A[%r] : %r" % (i, A[i]))
+
+	for i in range(len(A) - 1):
+		h = hmac.new(secret, digestmod = MD5)
+		h.update(A[i+1] + seed)
+		p_hash += h.digest()
 
 	return p_hash
 
 def P_SHA1(secret, seed, n):
+	print("")
 	print("P_SHA1(%r, %r, %r)" % (secret, seed, n))
 	A = []
 	A.append(seed)
@@ -335,26 +450,43 @@ def P_SHA1(secret, seed, n):
 	p_hash = b''
 
 	for i in range(n):
+
+		# A[i + 1] = HMAC(secret, A[i])
 		h = hmac.new(secret, digestmod = SHA1)
 		h.update(A[i])
-		A_i = h.digest()
-		A.append(A_i)
-		p_hash += A_i
+		A_i_plus = h.digest()
+		A.append(A_i_plus)
+		#p_hash += A_i_plus
+
+	#for i in range(len(A)):
+	#	print("A[%r] : %r" % (i, A[i]))
+
+	for i in range(len(A) - 1):
+		h = hmac.new(secret, digestmod = SHA1)
+		h.update(A[i+1] + seed)
+		p_hash += h.digest()
+
+	print("p_hash SHA1 : %r (%r bytes)" % (p_hash, len(p_hash)))
 
 	return p_hash
 
 def PRF(secret, label, seed):
+
+    print("PRF(%r, %r, %r)" % (secret, label, seed) )
+
     l = len(secret)
 
     S1 = secret[:l//2]
     S2 = secret[l//2:]
 
-    p_md5 = P_MD5(S1, label + seed, 10)
-    p_sha1 = P_SHA1(S2, label + seed, 8)
+    p_md5 = P_MD5(S1, label + seed, 20)
+    p_sha1 = P_SHA1(S2, label + seed, 16)
 
     return xor(p_md5, p_sha1)
 
 def derivate_crypto_material():
+
+	global key_block
 
 	if keylogfile != None and selected_version != None:
 		print("going to generate crypto material for %r from %r" % (get_tls_version(selected_version), keylogfile))
@@ -393,6 +525,9 @@ def derivate_crypto_material():
 			return
 
 		print("master_secret : %r\n" % master_secret)
+
+		seed = server_random + client_random
+		key_block = PRF(master_secret, b'key expansion', seed)
 
 def decrypt_application_data(message):
 	print("")
@@ -629,14 +764,6 @@ def dissect_client_hello(hello_message):
 	parse_extension(hello_message, offset)
 
 
-# Get the key exchange algorithm from the the selected CipherSuite
-#
-def get_key_exchange_algorithm(selected_ciphersuite):
-    ciphersuite_name = cipher_suites[selected_ciphersuite]
-    global key_exchange_algorithm
-    key_exchange_algorithm = ciphersuite_name.split('_')[1] + "_" + ciphersuite_name.split('_')[2]
-    return key_exchange_algorithm
-
 # Parse a ServerHello message
 #
 def dissect_server_hello(hello_message):
@@ -644,6 +771,7 @@ def dissect_server_hello(hello_message):
 	offset = 0
 	global selected_version
 	global server_random
+	global selected_cipher_suite
 
 	packet_version = int.from_bytes(hello_message[offset : offset + 2], 'big')
 	selected_version = packet_version
@@ -660,6 +788,13 @@ def dissect_server_hello(hello_message):
 	offset += session_id_len
 
 	selected_cipher_suite = int.from_bytes(hello_message[offset : offset + 2], 'big')
+	get_cipher_algo()
+	get_cipher_algo_keylen()
+	get_cipher_algo_ivlen()
+
+	get_mac_algo()
+	get_mac_algo_keylen()
+
 	offset += 2
 
 	#key_exchange_algorithm
@@ -926,6 +1061,21 @@ def dissect_handshake_record(handshake_record):
 def dissect_application_record(tls_record):
 	print("  Application record")
 
+	if key_block != None:
+		if is_from_client == True:
+			enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
+			iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen]
+		elif is_from_client == False:
+			enc_key = key_block[2 * mac_algorithm_keylen + cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen]
+			iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_ivlen]
+
+		cipher = AES.new(enc_key, AES.MODE_CBC, iv)
+		try:
+			plaintext = unpad(cipher.decrypt(tls_record), AES.block_size)
+			print("  Decrypted data: %r" % plaintext)
+		except ValueError:
+			print("  Decryption error !")
+		#plaintext = cipher.decrypt(tls_record)
 
 # global variables to store piece of a TLS packet
 # in case this packet is fragmented into several
@@ -1047,11 +1197,26 @@ def dissect_tls_packet(packet, index):
 
 def main():
 
-	secret = b'\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b'
-	seed = b'Hi There'
+	#master_secret = b'\xEC\x4B\x85\x1E\x51\x43\x23\x35\x75\x61\xA6\x9D\x0C\x12\x08\xDA\xBF\x72\x75\x04\x35\xDF\x99\xE9\x3F\x8E\x45\xC1\x7C\x69\x20\xA3\x73\x54\x29\x75\x5D\xAA\x90\xB1\x24\x4A\xB9\x58\x44\x90\x1D\xB6'
 
-	P_MD5(secret, seed, 10)
-	exit(0)
+	#label = b'key expansion'
+
+	#server_random = b'\xF6\xCA\x32\x42\x38\x39\xB5\x82\xE6\x6D\x1A\x22\x5D\xCA\x1C\x01\x6A\x3B\x0B\x89\xCF\xCD\x2B\x2D\x44\x4F\x57\x4E\x47\x52\x44\x00'
+	#client_random = b'\xCC\x3A\x57\x35\xAD\xB7\x6E\x4E\x00\x9F\x15\x87\x83\x12\x79\x4D\xB1\x18\x36\x26\xD0\xF5\xA7\x5F\x27\xD2\xBC\xCE\x6C\xD9\xEA\xB2'
+
+	#seed = server_random + client_random
+
+	#print("master_key : %r" % master_secret)
+	#print("label : %r" % label)
+	#print("server_random : %r" % server_random)
+	#print("client_random : %r" % client_random)
+	#print("")
+
+	#key_block = PRF(master_secret, label, seed)
+	#print("")
+	#print("key_block : %r" % key_block)
+
+	#exit(0)
 
 	parser = argparse.ArgumentParser()
 
