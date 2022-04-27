@@ -491,9 +491,12 @@ def PRF(secret, label, seed):
 def derivate_crypto_material():
 
 	global key_block
+	global debug
 
 	if keylogfile != None and selected_version != None:
-		print("going to generate crypto material for %r from %r" % (get_tls_version(selected_version), keylogfile))
+
+		if debug == True:
+			print("going to generate crypto material for %r from %r" % (get_tls_version(selected_version), keylogfile))
 
 		if client_random == None or server_random == None:
 			print("client_random or server_random wasn't set !")
@@ -528,7 +531,8 @@ def derivate_crypto_material():
 			print("Error - master secret is weird %r" % master_secret)
 			return
 
-		print("master_secret : %r\n" % master_secret)
+		if debug == True:
+			print("master_secret : %r\n" % master_secret)
 
 		seed = server_random + client_random
 		key_block = PRF(master_secret, b'key expansion', seed)
@@ -1083,18 +1087,23 @@ def dissect_application_record(tls_record):
 				is_first_block_srv = False
 			else:
 				iv = last_iv_srv
-
 		print("iv : %r len(iv) %r" % (iv, len(iv)))
 
 		cipher = AES.new(enc_key, AES.MODE_CBC, iv)
 		try:
-			plaintext = unpad(cipher.decrypt(tls_record), AES.block_size)
+			decrypted_record = unpad(cipher.decrypt(tls_record), AES.block_size)
 
-			# last plaintexte bytes contains the MAC
-			plaintext = plaintext[: - mac_algorithm_keylen]
-			real_mac = plaintext[mac_algorithm_keylen:]
+			# TLS uses a PKCS#5 padding (\x03\x03\x03)
+			# prefixed with the padding length (therefore \x03\x03\x03\x03)
+			decrypted_record = decrypted_record[:-1]
+
+			# last plaintext bytes contains the MAC
+			plaintext = decrypted_record[: - mac_algorithm_keylen]
+			real_mac = decrypted_record[- mac_algorithm_keylen:]
 
 			print("  Decrypted data: %r" % plaintext)
+			print("  Mac : %r" % real_mac)
+
 		except ValueError:
 			print("  Decryption error !")
 
