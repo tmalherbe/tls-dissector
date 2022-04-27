@@ -1093,11 +1093,7 @@ def dissect_handshake_record(handshake_record):
 		# increment the record counter
 		message_index += 1
 
-# Parse an Application record
-# Basically nothing to do
-#
-def dissect_application_record(tls_record):
-	print("  Application record")
+def decrypt_TLS1_0_record(tls_record):
 
 	global is_first_block_cli
 	global is_first_block_srv
@@ -1105,46 +1101,88 @@ def dissect_application_record(tls_record):
 	global last_iv_cli
 	global last_iv_srv
 
+	if is_from_client == True:
+		enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
+		if is_first_block_cli:
+			iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen]
+			is_first_block_cli = False
+		else:
+			iv = last_iv_cli
+	elif is_from_client == False:
+		enc_key = key_block[2 * mac_algorithm_keylen + cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen]
+		if is_first_block_srv:
+			iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_ivlen]
+			is_first_block_srv = False
+		else:
+			iv = last_iv_srv
+	print("iv : %r len(iv) %r" % (iv, len(iv)))
+
+	cipher = AES.new(enc_key, AES.MODE_CBC, iv)
+	try:
+		decrypted_record = unpad(cipher.decrypt(tls_record), AES.block_size)
+
+		# TLS uses a PKCS#5 padding (\x03\x03\x03)
+		# prefixed with the padding length (therefore \x03\x03\x03\x03)
+		decrypted_record = decrypted_record[:-1]
+
+		# last plaintext bytes contains the MAC
+		plaintext = decrypted_record[: - mac_algorithm_keylen]
+		real_mac = decrypted_record[- mac_algorithm_keylen:]
+
+		print("  Decrypted data: %r" % plaintext)
+		print("  Mac : %r" % real_mac)
+
+	except ValueError:
+		print("  Decryption error !")
+
+	if is_from_client == True:
+		last_iv_cli = tls_record[-16:]
+	else:
+		last_iv_srv = tls_record[-16:]
+
+def decrypt_TLS1_1_record(tls_record):
+
+	if is_from_client == True:
+		enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
+	elif is_from_client == False:
+		enc_key = key_block[2 * mac_algorithm_keylen + cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen]
+
+	iv = tls_record[:cipher_algorithm_ivlen]
+	cipher = AES.new(enc_key, AES.MODE_CBC, iv)
+	try:
+		decrypted_record = unpad(cipher.decrypt(tls_record), AES.block_size)
+
+		# TLS uses a PKCS#5 padding (\x03\x03\x03)
+		# prefixed with the padding length (therefore \x03\x03\x03\x03)
+		decrypted_record = decrypted_record[:-1]
+
+		# last plaintext bytes contains the MAC
+		plaintext = decrypted_record[cipher_algorithm_ivlen: - mac_algorithm_keylen]
+		real_mac = decrypted_record[- mac_algorithm_keylen:]
+
+		print("  Decrypted data: %r" % plaintext)
+		print("  Mac : %r" % real_mac)
+
+	except ValueError:
+		print("  Decryption error !")
+
+# Parse an Application record
+# Basically nothing to do, unless a keylogfile is used
+#
+def dissect_application_record(tls_record):
+
+	print("  Application record")
+
+	global selected_version
+
     # attempt decryption only if we have some key material
 	if key_block != None:
-		if is_from_client == True:
-			enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
-			if is_first_block_cli:
-				iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen]
-				is_first_block_cli = False
-			else:
-				iv = last_iv_cli
-		elif is_from_client == False:
-			enc_key = key_block[2 * mac_algorithm_keylen + cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen]
-			if is_first_block_srv:
-				iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_ivlen]
-				is_first_block_srv = False
-			else:
-				iv = last_iv_srv
-		print("iv : %r len(iv) %r" % (iv, len(iv)))
-
-		cipher = AES.new(enc_key, AES.MODE_CBC, iv)
-		try:
-			decrypted_record = unpad(cipher.decrypt(tls_record), AES.block_size)
-
-			# TLS uses a PKCS#5 padding (\x03\x03\x03)
-			# prefixed with the padding length (therefore \x03\x03\x03\x03)
-			decrypted_record = decrypted_record[:-1]
-
-			# last plaintext bytes contains the MAC
-			plaintext = decrypted_record[: - mac_algorithm_keylen]
-			real_mac = decrypted_record[- mac_algorithm_keylen:]
-
-			print("  Decrypted data: %r" % plaintext)
-			print("  Mac : %r" % real_mac)
-
-		except ValueError:
-			print("  Decryption error !")
-
-		if is_from_client == True:
-			last_iv_cli = tls_record[-16:]
-		else:
-			last_iv_srv = tls_record[-16:]
+		# TLSv1.0
+		if selected_version == 0x0301:
+			decrypt_TLS1_0_record(tls_record)
+		# TLSv1.1
+		elif selected_version == 0x0302:
+			decrypt_TLS1_1_record(tls_record)
 
 # global variables to store piece of a TLS packet
 # in case this packet is fragmented into several
