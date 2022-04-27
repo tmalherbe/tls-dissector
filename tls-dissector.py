@@ -329,7 +329,9 @@ key_block = None
 # global variable to store the keylogfile name
 keylogfile = None
 
-is_first_block = True
+is_first_block_cli = True
+is_first_block_srv = True
+
 last_iv_cli = None
 last_iv_srv = None
 
@@ -436,10 +438,6 @@ def P_MD5(secret, seed, n):
 		h.update(A[i])
 		A_i_plus = h.digest()
 		A.append(A_i_plus)
-		#p_hash += A_i_plus
-
-	#for i in range(len(A)):
-	#	print("A[%r] : %r" % (i, A[i]))
 
 	for i in range(len(A) - 1):
 		h = hmac.new(secret, digestmod = MD5)
@@ -463,10 +461,6 @@ def P_SHA1(secret, seed, n):
 		h.update(A[i])
 		A_i_plus = h.digest()
 		A.append(A_i_plus)
-		#p_hash += A_i_plus
-
-	#for i in range(len(A)):
-	#	print("A[%r] : %r" % (i, A[i]))
 
 	for i in range(len(A) - 1):
 		h = hmac.new(secret, digestmod = SHA1)
@@ -951,10 +945,13 @@ def dissect_client_key_exchange(hello_message):
 def dissect_finished(hello_message):
 
 	global last_iv_srv
+	global is_first_block_srv
+
 	offset = 0
 
 	if is_from_client == False:
 		last_iv_srv = hello_message[-cipher_algorithm_ivlen:]
+		is_first_block_srv = False
 
 	return offset
 
@@ -1070,7 +1067,9 @@ def dissect_handshake_record(handshake_record):
 def dissect_application_record(tls_record):
 	print("  Application record")
 
-	global is_first_block
+	global is_first_block_cli
+	global is_first_block_srv
+
 	global last_iv_cli
 	global last_iv_srv
 
@@ -1078,16 +1077,16 @@ def dissect_application_record(tls_record):
 	if key_block != None:
 		if is_from_client == True:
 			enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
-			if is_first_block:
+			if is_first_block_cli:
 				iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen]
-				is_first_block = False
+				is_first_block_cli = False
 			else:
 				iv = last_iv_cli
 		elif is_from_client == False:
 			enc_key = key_block[2 * mac_algorithm_keylen + cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen]
-			if is_first_block:
+			if is_first_block_srv:
 				iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_ivlen]
-				is_first_block = False
+				is_first_block_srv = False
 			else:
 				iv = last_iv_srv
 
@@ -1098,7 +1097,7 @@ def dissect_application_record(tls_record):
 			plaintext = unpad(cipher.decrypt(tls_record), AES.block_size)
 
 			# last plaintexte bytes contains the MAC
-			plaintext = plaintext[:-mac_algorithm_keylen]
+			plaintext = plaintext[: - mac_algorithm_keylen]
 			real_mac = plaintext[mac_algorithm_keylen:]
 
 			print("  Decrypted data: %r" % plaintext)
