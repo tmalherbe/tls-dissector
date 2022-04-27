@@ -1086,6 +1086,7 @@ def dissect_application_record(tls_record):
 		cipher = AES.new(enc_key, AES.MODE_CBC, iv)
 		try:
 			plaintext = unpad(cipher.decrypt(tls_record), AES.block_size)
+			plaintext = plaintext[:-mac_algorithm_keylen]
 			print("  Decrypted data: %r" % plaintext)
 		except ValueError:
 			print("  Decryption error !")
