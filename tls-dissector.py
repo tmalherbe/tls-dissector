@@ -330,7 +330,8 @@ key_block = None
 keylogfile = None
 
 is_first_block = True
-last_iv = None
+last_iv_cli = None
+last_iv_srv = None
 
 # Functions to compute session keys from master_secret
 #
@@ -949,7 +950,12 @@ def dissect_client_key_exchange(hello_message):
 #
 def dissect_finished(hello_message):
 
+	global last_iv_srv
 	offset = 0
+
+	if is_from_client == False:
+		last_iv_srv = hello_message[-cipher_algorithm_ivlen:]
+
 	return offset
 
 # Parse a ServerHelloDone message
@@ -1065,8 +1071,10 @@ def dissect_application_record(tls_record):
 	print("  Application record")
 
 	global is_first_block
-	global last_iv
+	global last_iv_cli
+	global last_iv_srv
 
+    # attempt decryption only if we have some key material
 	if key_block != None:
 		if is_from_client == True:
 			enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
@@ -1074,27 +1082,33 @@ def dissect_application_record(tls_record):
 				iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen]
 				is_first_block = False
 			else:
-				iv = last_iv
+				iv = last_iv_cli
 		elif is_from_client == False:
 			enc_key = key_block[2 * mac_algorithm_keylen + cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen]
 			if is_first_block:
 				iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_ivlen]
 				is_first_block = False
 			else:
-				iv = last_iv
+				iv = last_iv_srv
 
 		print("iv : %r len(iv) %r" % (iv, len(iv)))
-		#iv = b'\x8c\xeb\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 
 		cipher = AES.new(enc_key, AES.MODE_CBC, iv)
 		try:
 			plaintext = unpad(cipher.decrypt(tls_record), AES.block_size)
+
+			# last plaintexte bytes contains the MAC
 			plaintext = plaintext[:-mac_algorithm_keylen]
+			real_mac = plaintext[mac_algorithm_keylen:]
+
 			print("  Decrypted data: %r" % plaintext)
 		except ValueError:
 			print("  Decryption error !")
 
-		last_iv = tls_record[-16:]
+		if is_from_client == True:
+			last_iv_cli = tls_record[-16:]
+		else:
+			last_iv_srv = tls_record[-16:]
 
 # global variables to store piece of a TLS packet
 # in case this packet is fragmented into several
