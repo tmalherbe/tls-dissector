@@ -343,8 +343,7 @@ def get_cipher_algo():
 	global cipher_algorithm
 
 	cipher_suite_name = cipher_suites[selected_cipher_suite]
-	#print(cipher_suite_name)
-	
+
 	if cipher_suite_name.find('AES_128_CBC') != -1:
 		cipher_algorithm = "AES_128_CBC"
 	elif cipher_suite_name.find('AES_256_CBC') != -1:
@@ -421,65 +420,69 @@ def xor(x, y):
 	return bytes(a ^ b for a, b in zip(x, y))
 
 def P_MD5(secret, seed, n):
-	print("")
-	print("P_MD5(%r, %r, %r)" % (secret, seed, n))
 
-	A = []
+	global debug
+	if debug == True:
+	    print("")
+	    print("MD5(%r, %r, %r)" % (secret, seed, n))
 
 	# A[0] = seed
+	A = []
 	A.append(seed)
 
 	p_hash = b''
-
 	for i in range(n):
-
 		# A[i + 1] = HMAC(secret, A[i])
 		h = hmac.new(secret, digestmod = MD5)
 		h.update(A[i])
 		A_i_plus = h.digest()
 		A.append(A_i_plus)
-
 	for i in range(len(A) - 1):
 		h = hmac.new(secret, digestmod = MD5)
 		h.update(A[i+1] + seed)
 		p_hash += h.digest()
 
+	if debug == True:
+		print("p_hash MD5 : %r (%r bytes)" % (p_hash, len(p_hash)))
 	return p_hash
 
 def P_SHA1(secret, seed, n):
-	print("")
-	print("P_SHA1(%r, %r, %r)" % (secret, seed, n))
+
+	global debug
+	if debug == True:
+	    print("")
+	    print("P_SHA1(%r, %r, %r)" % (secret, seed, n))
+
+	# A[0] = seed
 	A = []
 	A.append(seed)
 
 	p_hash = b''
-
 	for i in range(n):
-
 		# A[i + 1] = HMAC(secret, A[i])
 		h = hmac.new(secret, digestmod = SHA1)
 		h.update(A[i])
 		A_i_plus = h.digest()
 		A.append(A_i_plus)
-
 	for i in range(len(A) - 1):
 		h = hmac.new(secret, digestmod = SHA1)
 		h.update(A[i+1] + seed)
 		p_hash += h.digest()
 
-	print("p_hash SHA1 : %r (%r bytes)" % (p_hash, len(p_hash)))
-
+	if debug == True:
+		print("p_hash SHA1 : %r (%r bytes)" % (p_hash, len(p_hash)))
 	return p_hash
 
 def PRF(secret, label, seed):
 
-    print("PRF(%r, %r, %r)" % (secret, label, seed) )
+    global debug
+    if debug == True:
+	    print("PRF(%r, %r, %r)" % (secret, label, seed) )
 
     l = len(secret)
 
     S1 = secret[:l//2]
     S2 = secret[l//2:]
-
     p_md5 = P_MD5(S1, label + seed, 20)
     p_sha1 = P_SHA1(S2, label + seed, 16)
 
@@ -904,14 +907,6 @@ def dissect_server_key_exchange(hello_message):
 		print(key_exchange_algorithm)
 	else:
 		print(key_exchange_algorithm)
-
-	#server_key_exchange_len = int.from_bytes(hello_message[offset - 3 : offset], 'big')
-	#server_key_exchange = hello_message[offset : offset + server_key_exchange_len]
-	#offset += server_key_exchange_len
-
-	#print("server_key_exchange_len length : %r" % server_key_exchange_len)
-	#print("server_key_exchange : %r" % server_key_exchange)
-
 	return offset
 
 # Parse a ClientKeyExchange message
@@ -1045,13 +1040,12 @@ def dissect_handshake_record(handshake_record):
 		# default case - can be an encrypted handshake message
 		else:
 			# if the handshake message is weird and ChangeCipherSpec was seen,
-			# we consider we have an encrypted handshake
-			# and we skip the record
+			# it's probably the Finished message.
 			if (is_from_client and client_finished_handshake):
-			    print("Unknown handshake message (%r) from client - could be an encrypted handshake message ?" % message_type)
+			    dissect_finished(handshake_message)
 			    offset += (record_len - 4)
 			elif server_finished_handshake:
-			    print("Unknown handshake message (%r) from server - could be an encrypted handshake message ?" % message_type)
+			    dissect_finished(handshake_message)
 			    offset += (record_len - 4)
 			# if the handshake message is weird but no ChangeCipherSpec was seen,
 			# ...then the message is just weird
