@@ -276,6 +276,9 @@ def get_extension_type(extension_type):
 
 # Some global variables to handle SSL/TLS state-machine
 #
+
+debug = False
+
 # global variables for client & server addresses
 addr_client = ""
 addr_server = ""
@@ -1177,8 +1180,10 @@ def dissect_tls_packet(packet, index):
 			break
 
 		tls_record = tls_packet[offset : offset + record_len]
-		print(" tls_record %r : %r" % (record_index, tls_record))
 		offset += record_len
+
+		if debug == True:
+			print(" tls_record %r : %r" % (record_index, tls_record))
 
 		# process the TLS record
 		# switch over the tls_content_type
@@ -1246,9 +1251,15 @@ def main():
 								help = "The file containing master secret & crypto stuffs to decrypt the traffic. This file comes from openssl s_client --keylogfile",
 								type = str)
 
-	args = parser.parse_args()
+	parser.add_argument("-d", "--debug",
+								required = False,
+								help = "activate debugging with -d / --debug",
+								action="store_true")
 
+	global debug
+	args = parser.parse_args()
 	pcap_path = args.pcap
+	debug = args.debug
 
 	# open the pcap
 	try:
