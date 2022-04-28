@@ -1273,22 +1273,40 @@ def decrypt_TLS1_1_record(tls_record):
 		print("iv : %r len(iv) %r" % (iv, len(iv)))
 
 	cipher = AES.new(enc_key, AES.MODE_CBC, iv)
-	try:
-		decrypted_record_padded = cipher.decrypt(tls_record)
-		decrypted_record = unpad(decrypted_record_padded)
 
-		# last plaintext bytes contains the MAC
-		plaintext = decrypted_record[cipher_algorithm_ivlen: - mac_algorithm_keylen]
-		real_mac = decrypted_record[- mac_algorithm_keylen:]
+	if encrypt_then_mac == False:
+		try:
+			decrypted_record_padded = cipher.decrypt(tls_record)
+			decrypted_record = unpad(decrypted_record_padded)
 
-		if debug == True:
-			print("decrypted_record_padded : %r" % decrypted_record_padded)
-			print("decrypted_record : %r" % decrypted_record)
-			print("  Mac : %r" % real_mac)
-		print("  Decrypted data: %r" % plaintext)
+			# last plaintext bytes contains the MAC
+			plaintext = decrypted_record[cipher_algorithm_ivlen: - mac_algorithm_keylen]
+			real_mac = decrypted_record[- mac_algorithm_keylen:]
 
-	except ValueError:
-		print("  Decryption error !")
+			if debug == True:
+				print("decrypted_record_padded : %r" % decrypted_record_padded)
+				print("decrypted_record : %r" % decrypted_record)
+				print("  Mac : %r" % real_mac)
+			print("  Decrypted data: %r" % plaintext)
+
+		except ValueError:
+			print("  Decryption error !")
+	else:
+		try:
+			# MAC is at the begining of the encrypted record
+			real_mac = tls_record[- mac_algorithm_keylen:]
+			encrypted_record = tls_record[cipher_algorithm_ivlen: -mac_algorithm_keylen]
+			decrypted_record = cipher.decrypt(encrypted_record)
+			plaintext = unpad(decrypted_record)
+
+			if debug == True:
+				print("  Mac : %r (%r bytes)" % (real_mac, len(real_mac)))
+				print("  encrypted record with mac : %r (%r bytes)" % (encrypted_record, len(encrypted_record)))
+				print("  decrypted_record : %r" % decrypted_record)
+			print("  Decrypted data : %r" % plaintext)
+
+		except ValueError as e:
+			print("  Decryption error ! (%r)" % e)
 
 # Parse an Application record
 # Basically nothing to do, unless a keylogfile is used
