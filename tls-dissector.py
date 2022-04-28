@@ -5,7 +5,7 @@ import argparse
 import base64
 import binascii
 
-from Cryptodome.Hash import HMAC as hmac, MD5, SHA1
+from Cryptodome.Hash import HMAC as hmac, MD5, SHA1, SHA256
 from Cryptodome.Cipher import AES
 from Cryptodome.Util.Padding import unpad
 
@@ -507,20 +507,50 @@ def P_SHA1(secret, seed, n):
 		print("p_hash SHA1 : %r (%r bytes)" % (p_hash, len(p_hash)))
 	return p_hash
 
+def P_SHA256(secret, seed, n):
+
+	global debug
+	if debug == True:
+	    print("")
+	    print("P_SHA256(%r, %r, %r)" % (secret, seed, n))
+
+	# A[0] = seed
+	A = []
+	A.append(seed)
+
+	p_hash = b''
+	for i in range(n):
+		# A[i + 1] = HMAC(secret, A[i])
+		h = hmac.new(secret, digestmod = SHA256)
+		h.update(A[i])
+		A_i_plus = h.digest()
+		A.append(A_i_plus)
+	for i in range(len(A) - 1):
+		h = hmac.new(secret, digestmod = SHA256)
+		h.update(A[i+1] + seed)
+		p_hash += h.digest()
+
+	if debug == True:
+		print("p_hash SHA256 : %r (%r bytes)" % (p_hash, len(p_hash)))
+	return p_hash
+
 def PRF(secret, label, seed):
 
     global debug
     if debug == True:
 	    print("PRF(%r, %r, %r)" % (secret, label, seed) )
 
-    l = len(secret)
+    if selected_version < 0x0303:
+	    l = len(secret)
 
-    S1 = secret[:l//2]
-    S2 = secret[l//2:]
-    p_md5 = P_MD5(S1, label + seed, 20)
-    p_sha1 = P_SHA1(S2, label + seed, 16)
+	    S1 = secret[:l//2]
+	    S2 = secret[l//2:]
+	    p_md5 = P_MD5(S1, label + seed, 20)
+	    p_sha1 = P_SHA1(S2, label + seed, 16)
 
-    return xor(p_md5, p_sha1)
+	    return xor(p_md5, p_sha1)
+    else:
+	    return P_SHA256(secret, label + seed, 20)
 
 def derivate_crypto_material():
 
@@ -1182,6 +1212,9 @@ def dissect_application_record(tls_record):
 			decrypt_TLS1_0_record(tls_record)
 		# TLSv1.1
 		elif selected_version == 0x0302:
+			decrypt_TLS1_1_record(tls_record)
+		# TLSv1.2
+		elif selected_version == 0x0303:
 			decrypt_TLS1_1_record(tls_record)
 
 # global variables to store piece of a TLS packet
