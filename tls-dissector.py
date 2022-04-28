@@ -363,11 +363,16 @@ key_block = None
 # global variable to store the keylogfile name
 keylogfile = None
 
+# in TLSv1.0 - 1st application record uses an IV coming from key_block
+# and following records use the end of the previous record as an IV.
 is_first_block_cli = True
 is_first_block_srv = True
-
 last_iv_cli = None
 last_iv_srv = None
+
+# We need to know if client+server agreed on using encrypt_then_mac
+# when we attempt to decrypt an application record
+encrypt_then_mac = False
 
 # Functions to compute session keys from master_secret
 #
@@ -561,7 +566,6 @@ def derivate_crypto_material():
 
 		if debug == True:
 			print("going to generate crypto material for %r from %r" % (get_tls_version(selected_version), keylogfile))
-
 		if client_random == None or server_random == None:
 			print("client_random or server_random wasn't set !")
 			return
@@ -756,8 +760,14 @@ def parse_extension(hello_message, offset):
 		print("\t - extension content : %r" % extension_content)
 
 		# switch over extension type to analyse the extension
+		# supported_version extension
 		if extension_type == 43:
 		    dissect_extension_supported_version(extension_content)
+		# encrypt_then_mac extension
+		elif extension_type == 22 and is_from_client == False:
+		    global encrypt_then_mac
+		    encrypt_then_mac = True
+		    print("\t => Server wants to use encrypt_then_mac !")
 
 	return offset
 
@@ -1012,9 +1022,15 @@ def dissect_finished(hello_message):
 
 	offset = 0
 
-	if is_from_client == False:
-		last_iv_srv = hello_message[-cipher_algorithm_ivlen:]
-		is_first_block_srv = False
+	if encrypt_then_mac == False:
+		if is_from_client == False:
+			last_iv_srv = hello_message[-cipher_algorithm_ivlen:]
+			is_first_block_srv = False
+	else:
+		if is_from_client == False:
+			encrypted_record = hello_message[: -mac_algorithm_keylen]
+			last_iv_srv = encrypted_record[-16:]
+			is_first_block_srv = False
 
 	return offset
 
@@ -1055,7 +1071,9 @@ def dissect_handshake_record(handshake_record):
 		print("  Message length : %r" % message_len)
 
 		handshake_message = handshake_record[offset : offset + message_len]
-		print("handshake_message %r : %r" % (message_index, handshake_message))
+
+		if debug == True:
+			print("handshake_message %r : %r" % (message_index, handshake_message))
 		offset += message_len
 
 		# process the Handshake message
@@ -1123,6 +1141,24 @@ def dissect_handshake_record(handshake_record):
 		# increment the record counter
 		message_index += 1
 
+# TLS uses a PKCS#5 padding (\x03\x03\x03)
+# prefixed with the padding length (therefore \x03\x03\x03\x03)
+def unpad(padded_record):
+	last_byte = padded_record[-1]
+
+	if last_byte > cipher_algorithm_ivlen:
+		print("Padding Error ! Padding is longer than the cipher block size ! (%r)" % last_byte)
+		return None
+	elif last_byte > 0:
+		for i in range(last_byte + 1):
+			#print("padded_record[%r] : %r" % ( len(padded_record) - i - 1, padded_record[-i - 1]))
+			if padded_record[-i - 1] != last_byte:
+				print("Padding Error ! Padding is not correct (padded_record : %r)" % padded_record)
+				return None
+
+	unpadded_record = padded_record[: - last_byte - 1]
+	return unpadded_record
+
 def decrypt_TLS1_0_record(tls_record):
 
 	global is_first_block_cli
@@ -1130,6 +1166,9 @@ def decrypt_TLS1_0_record(tls_record):
 
 	global last_iv_cli
 	global last_iv_srv
+
+	if debug == True and encrypt_then_mac == True:
+		print("TLSv1.0 decryption - encrypt_then_mac is used")
 
 	if is_from_client == True:
 		enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
@@ -1145,30 +1184,53 @@ def decrypt_TLS1_0_record(tls_record):
 			is_first_block_srv = False
 		else:
 			iv = last_iv_srv
-	print("iv : %r len(iv) %r" % (iv, len(iv)))
+
+	if debug == True:
+		print("iv : %r len(iv) %r" % (iv, len(iv)))
 
 	cipher = AES.new(enc_key, AES.MODE_CBC, iv)
-	try:
-		decrypted_record = unpad(cipher.decrypt(tls_record), AES.block_size)
+	if encrypt_then_mac == False:
+		try:
+			decrypted_record = unpad(cipher.decrypt(tls_record), AES.block_size)
 
-		# TLS uses a PKCS#5 padding (\x03\x03\x03)
-		# prefixed with the padding length (therefore \x03\x03\x03\x03)
-		decrypted_record = decrypted_record[:-1]
+			# TLS uses a PKCS#5 padding (\x03\x03\x03)
+			# prefixed with the padding length (therefore \x03\x03\x03\x03)
+			decrypted_record = decrypted_record[:-1]
 
-		# last plaintext bytes contains the MAC
-		plaintext = decrypted_record[: - mac_algorithm_keylen]
-		real_mac = decrypted_record[- mac_algorithm_keylen:]
+			# last plaintext bytes contains the MAC
+			plaintext = decrypted_record[: - mac_algorithm_keylen]
+			real_mac = decrypted_record[- mac_algorithm_keylen:]
 
-		print("  Decrypted data: %r" % plaintext)
-		print("  Mac : %r" % real_mac)
+			print("  Decrypted data: %r" % plaintext)
+			if debug == True:
+				print("  Mac : %r" % real_mac)
 
-	except ValueError:
-		print("  Decryption error !")
+		except ValueError:
+			print("  Decryption error !")
 
-	if is_from_client == True:
-		last_iv_cli = tls_record[-16:]
+		if is_from_client == True:
+			last_iv_cli = tls_record[-16:]
+		else:
+			last_iv_srv = tls_record[-16:]
 	else:
-		last_iv_srv = tls_record[-16:]
+		try:
+			real_mac = tls_record[- mac_algorithm_keylen:]
+			encrypted_record = tls_record[: -mac_algorithm_keylen]
+			decrypted_record = cipher.decrypt(encrypted_record)
+			plaintext = unpad(decrypted_record)
+
+			if debug == True:
+				print("  Mac : %r (%r bytes)" % (real_mac, len(real_mac)))
+				print("  encrypted record with mac : %r (%r bytes)" % (encrypted_record, len(encrypted_record)))
+				print("decrypted_record : %r" % decrypted_record)
+			print("  Decrypted data: %r" % plaintext)
+
+		except ValueError as e:
+			print("  Decryption error ! (%r)" % e)
+		if is_from_client == True:
+			last_iv_cli = encrypted_record[-16:]
+		else:
+			last_iv_srv = encrypted_record[-16:]
 
 def decrypt_TLS1_1_record(tls_record):
 
@@ -1191,7 +1253,8 @@ def decrypt_TLS1_1_record(tls_record):
 		real_mac = decrypted_record[- mac_algorithm_keylen:]
 
 		print("  Decrypted data: %r" % plaintext)
-		print("  Mac : %r" % real_mac)
+		if debug == True:
+			print("  Mac : %r" % real_mac)
 
 	except ValueError:
 		print("  Decryption error !")
