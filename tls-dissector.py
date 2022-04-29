@@ -17,6 +17,8 @@ from scapy.all import *
 # - handshake messages types
 # - cipher suites
 # - handshake messages extensions
+
+## tls version ##
 tls_versions = {
 	0x0301: "TLSv1.0",
 	0x0302: "TLSv1.1",
@@ -30,6 +32,7 @@ def get_tls_version(tls_version):
 	except:
 		print("tls_version %r is unknown" % hex(tls_version))
 
+## content types ##
 content_types = {
 	20: "ChangeCipherSpec",
 	21: "Alert",
@@ -43,6 +46,7 @@ def get_content_type(content_type):
 	except:
 		print("content_type %r is unknown" % hex(content_type))
 
+## handshake messages ##
 handshake_types = {
 	0: "HelloRequest",
 	1: "ClientHello",
@@ -67,6 +71,7 @@ def get_handshake_type(handshake_type):
 	except:
 		print("handshake_type %r is unknown" % hex(handshake_type))
 
+## cipher suites ##
 cipher_suites = {
 	0x0000: "TLS_NULL_WITH_NULL_NULL",
 
@@ -269,9 +274,11 @@ def get_cipher_suites(cipher_suites_array):
 		except:
 		    print("cipher_suite %r is unknown" % hex(cipher_suite))
 
+## compression ##
 def get_compression_suites(compression_suites_array):
 	print("\t - %r" % compression_suites_array)
 
+## extensions ##
 extension_types = {
 	0: "server_name",
 	1: "max_fragment_length",
@@ -311,75 +318,74 @@ def get_extension_type(extension_type):
 # Some global variables to handle SSL/TLS state-machine
 #
 
+## is debug activated ? ##
 debug = False
 
-# global variables for client & server addresses
+## client & server addresses ##
 addr_client = ""
 addr_server = ""
 
-# global variable set to True when a ClientHello is seen
-# and set to False when handshake is finished
+## global variable set to True when a ClientHello is seen ##
+## and set to False when handshake is finished            ##
 handshake_has_started = False
 
-# global variables to check if handshake is finished
+## has the client/server finished the handshake ? ##
 client_finished_handshake = False
 server_finished_handshake = False
 
-# global variable for the selected key exchange algorithm
+## what is the key exchange algorithm ? ##
 key_exchange_algorithm = ""
 
-# global variable for the selected ciphersuite
+## which ciphersuite was selected by the server ? ##
 selected_cipher_suite = 0x0000
 
-# global variable for the selected encryption algorithm
+## which cipherAlgorithm was selected by the server ? ##
 cipher_algorithm = ""
 
-# global variable for the selected mac algorithm
+## which macAlgorithm was selected by the server ? ##
 mac_algorithm = ""
 
-# global variable for the selected encryption algorithm key len
+## what is the cipherAlgorithm key length ? ##
 cipher_algorithm_keylen = 0
 
-# global variable for the selected encryption algorithm block len
+## what is the cipherAlgorithm block length ? ##
 cipher_algorithm_blocklen = 0
 
-# global varaible for the selected aead algorithm salt len
+## if AEAD is used, what is the salt length ? ##
 cipher_algorithm_saltlen = 0
 
-# global variable for the selected mac algorithm keylen
+## what is the macAlgorithm key length ? ##
 mac_algorithm_keylen = 0
 
-# global variable set to True if message is client -> server
+## does this packet come from client ? ##
 is_from_client = False
 
-# global variable for the selected TLS version
+## what is the TLS version selected by the server ? ##
 selected_version = None
 
-# global variable for the cryptographic material generation
+## global variable for the cryptographic material generation ##
 client_random = None
 server_random = None
 master_secret = None
 
-# global variable for the cryptographic material
+## global variable for the cryptographic material ##
 key_block = None
 
-# global variable to store the keylogfile name
+## global variable to store the keylogfile name ##
 keylogfile = None
 
-# in TLSv1.0 - 1st application record uses an IV coming from key_block
-# and following records use the end of the previous record as an IV.
+## in TLSv1.0 - 1st application record uses an IV coming from key_block ##
+## and following records use the end of the previous record as an IV    ##
 is_first_block_cli = True
 is_first_block_srv = True
 last_iv_cli = None
 last_iv_srv = None
 
-# We need to know if client+server agreed on using encrypt_then_mac
-# when we attempt to decrypt an application record
+## Have client&server chosen to encrypt then mac ? ##
+## (by default TLS uses mac then encrypt          )##
 encrypt_then_mac = False
 
-# Functions to compute session keys from master_secret
-#
-
+## set cipher_algorithm global state variable during ServerHello ##
 def get_cipher_algo():
 	global selected_cipher_suite
 	global cipher_algorithm
@@ -404,6 +410,7 @@ def get_cipher_algo():
 		cipher_algorithm = ""
 		print("%r is not supported, too bad" % cipher_suite_name)
 
+## set mac_algorithm global state variable during ServerHello ##
 def get_mac_algo():
 	global selected_cipher_suite
 	global mac_algorithm
@@ -420,6 +427,7 @@ def get_mac_algo():
 		mac_algorithm = ""
 		print("%r is not supported, too bad" % cipher_suite_name)
 
+## set cipher_algorithm_keylen global state variable during ServerHello ##
 def get_cipher_algo_keylen():
 	global cipher_algorithm
 	global cipher_algorithm_keylen
@@ -433,6 +441,7 @@ def get_cipher_algo_keylen():
 	elif cipher_algorithm == "AES_256_GCM":
 		cipher_algorithm_keylen = 32
 
+## set cipher_algorithm_blocklen global state variable during ServerHello ##
 def get_cipher_algo_blocklen():
 	global cipher_algorithm
 	global cipher_algorithm_blocklen
@@ -443,6 +452,7 @@ def get_cipher_algo_blocklen():
 	if cipher_algorithm == "AES_128_GCM" or cipher_algorithm == "AES_256_GCM":
 		cipher_algorithm_blocklen = 16
 
+## set cipher_algorithm_saltlen global state variable during ServerHello ##
 def get_cipher_algo_saltlen():
 	global cipher_algorithm
 	global cipher_algorithm_saltlen
@@ -450,6 +460,7 @@ def get_cipher_algo_saltlen():
 	if cipher_algorithm == "AES_128_GCM" or cipher_algorithm == "AES_256_GCM":
 		cipher_algorithm_saltlen = 4
 
+## set mac_algorithm_keylen global state variable during ServerHello ##
 def get_mac_algo_keylen():
 	global mac_algorithm
 	global mac_algorithm_keylen
@@ -461,20 +472,24 @@ def get_mac_algo_keylen():
 	elif mac_algorithm == "SHA":
 		mac_algorithm_keylen = 20
 
-# Get the key exchange algorithm from the the selected CipherSuite
-#
+## set key_exchange_algorithm global state variable during ServerHello ##
 def get_key_exchange_algorithm(selected_ciphersuite):
     ciphersuite_name = cipher_suites[selected_ciphersuite]
     global key_exchange_algorithm
     key_exchange_algorithm = ciphersuite_name.split('_')[1] + "_" + ciphersuite_name.split('_')[2]
     return key_exchange_algorithm
 
+# Functions to compute session keys from master_secret
+#
+
+## xor 2 strings ##
 def xor(x, y):
 	if len(x) != len(y):
 		print("error, x and y don't have the same length");
 		exit(0)
 	return bytes(a ^ b for a, b in zip(x, y))
 
+## P_MD5 for TLSv1.0 & TLSv1.1(rfc 2246 section 5) ##
 def P_MD5(secret, seed, n):
 
 	global debug
@@ -502,6 +517,7 @@ def P_MD5(secret, seed, n):
 		print("p_hash MD5 : %r (%r bytes)" % (p_hash, len(p_hash)))
 	return p_hash
 
+## P_SHA1 for TLSv1.0 & TLSv1.1(rfc 2246 section 5) ##
 def P_SHA1(secret, seed, n):
 
 	global debug
@@ -529,6 +545,7 @@ def P_SHA1(secret, seed, n):
 		print("p_hash SHA1 : %r (%r bytes)" % (p_hash, len(p_hash)))
 	return p_hash
 
+## P_SHA256 for TLSv1.2 (rfc 5246 section 5) ##
 def P_SHA256(secret, seed, n):
 
 	global debug
@@ -556,6 +573,7 @@ def P_SHA256(secret, seed, n):
 		print("p_hash SHA256 : %r (%r bytes)" % (p_hash, len(p_hash)))
 	return p_hash
 
+## P_SHA384 for TLSv1.2 (rfc 5246 section 5) ##
 def P_SHA384(secret, seed, n):
 
 	global debug
@@ -583,6 +601,7 @@ def P_SHA384(secret, seed, n):
 		print("p_hash SHA384 : %r (%r bytes)" % (p_hash, len(p_hash)))
 	return p_hash
 
+## PRF (rfc 2246/5246 section 5) ##
 def PRF(secret, label, seed):
 
 	global debug
@@ -604,6 +623,7 @@ def PRF(secret, label, seed):
 		else:
 			return P_SHA256(secret, label + seed, 20)
 
+## reads master_secret from keylogfile and computes key_material using PRF() ##
 def derivate_crypto_material():
 
 	global key_block
@@ -750,6 +770,8 @@ def handshake_record_get_header(handshake_record, offset):
 	record_len = int.from_bytes(handshake_record[offset + 1 : offset + 4], 'big')
 	return (record_type, record_len)
 
+# Set the selected_version global variable
+#
 def dissect_extension_supported_version(extension_content):
 
 	global selected_version
@@ -844,17 +866,20 @@ def dissect_client_hello(hello_message):
 
 	packet_version = int.from_bytes(hello_message[offset : offset + 2], 'big')
 	offset += 2
-	
+
+	# client_random
 	random = hello_message[offset : offset + 32]
 	client_random = random
 	offset += 32
 	
+	# session_id
 	session_id_len = hello_message[offset]
 	offset += 1
 
 	session_id = hello_message[offset : offset + session_id_len]
 	offset += session_id_len
 	
+	# cipher suites
 	cipher_suite_number = int.from_bytes(hello_message[offset : offset + 2], 'big') >> 1
 	offset += 2
 
@@ -864,6 +889,7 @@ def dissect_client_hello(hello_message):
 		cipher_suites.append(cipher_suite)
 		offset += 2
 
+	# compression suites
 	compression_suite_number = hello_message[offset]
 	offset += 1
 
@@ -875,7 +901,7 @@ def dissect_client_hello(hello_message):
 
 	print("ClientHello - TLS version : %r (%r)" % (hex(packet_version),  get_tls_version(packet_version)))
 	print("ClientHello - Random : %r" % random)
-	
+
 	if session_id_len > 0:
 		print("ClientHello - SessionID : %r" % session_id)
 	else:
@@ -887,6 +913,7 @@ def dissect_client_hello(hello_message):
 	print("ClientHello : %r CompressionSuites :" % compression_suite_number)
 	get_compression_suites(compression_suites)
 
+	# ClientHello extensions
 	parse_extension(hello_message, offset)
 
 
@@ -899,20 +926,24 @@ def dissect_server_hello(hello_message):
 	global server_random
 	global selected_cipher_suite
 
+	# TLS version selected by server
 	packet_version = int.from_bytes(hello_message[offset : offset + 2], 'big')
 	selected_version = packet_version
 	offset += 2
 
+	# server_random
 	random = hello_message[offset : offset + 32]
 	server_random = random
 	offset += 32
 
+	# session_id
 	session_id_len = hello_message[offset]
 	offset += 1
 
 	session_id = hello_message[offset : offset + session_id_len]
 	offset += session_id_len
 
+	# CipherSuite chosen by server - set all the cipherSuite-related global variables
 	selected_cipher_suite = int.from_bytes(hello_message[offset : offset + 2], 'big')
 	get_cipher_algo()
 	get_cipher_algo_keylen()
@@ -924,9 +955,10 @@ def dissect_server_hello(hello_message):
 
 	offset += 2
 
-	#key_exchange_algorithm
+	# key_exchange_algorithm
 	get_key_exchange_algorithm(selected_cipher_suite)
 
+	# compression suites
 	compression_suite_number = hello_message[offset]
 	offset += 1
 
@@ -952,6 +984,8 @@ def dissect_server_hello(hello_message):
 	print("ServerHello : %r CompressionSuites :" % compression_suite_number)
 	get_compression_suites(compression_suites)
 
+	# selected_version will be overriden here because in TLSv1.3 server tells which version
+	# was chosen using this extension
 	offset = parse_extension(hello_message, offset)
 
 	print("ServerHello - Server selected %r" % get_tls_version(selected_version))
@@ -1070,6 +1104,8 @@ def dissect_finished(hello_message):
 
 	offset = 0
 
+	# in TLSv1.0 the IV comes from key_material for the 1st record and then the end of the previous record
+	# if message comes from server we need to remember the end of Finished message as the next IV.
 	if encrypt_then_mac == False:
 		if is_from_client == False:
 			last_iv_srv = hello_message[-cipher_algorithm_blocklen:]
@@ -1093,16 +1129,17 @@ def dissect_server_hello_done(tls_packet):
 def dissect_handshake_record(handshake_record):
 
 	print("  Handshake record")
-	
+
 	# record total length
 	record_len = len(handshake_record)
 
 	# absolute offset in record
 	offset = 0
-	
+
 	# message counter
 	message_index = 0
-	
+
+	# loop over the record the dissect all the messages
 	while offset < record_len:
 
 		# We shall have at least 4 bytes
@@ -1111,6 +1148,7 @@ def dissect_handshake_record(handshake_record):
 			print("Error: The Handshake record is too short (%r remaining bytes)" % (record_len - offset))
 			exit(0)
 
+		# TODO - this doesn't behave properly with Finished message (and other encrypted messages)
 		(message_type, message_len) = handshake_record_get_header(handshake_record, offset)
 		offset += 4
 
@@ -1199,7 +1237,6 @@ def unpad(padded_record):
 		return None
 	elif last_byte > 0:
 		for i in range(last_byte + 1):
-			#print("padded_record[%r] : %r" % ( len(padded_record) - i - 1, padded_record[-i - 1]))
 			if padded_record[-i - 1] != last_byte:
 				print("Padding Error ! Padding is not correct (padded_record : %r)" % padded_record)
 				return None
@@ -1207,6 +1244,8 @@ def unpad(padded_record):
 	unpadded_record = padded_record[: - last_byte - 1]
 	return unpadded_record
 
+# Decrypt a TLSv1.0 application record
+# The record can be macced & encrypted (default) or encrypted & macced
 def decrypt_TLS1_0_record(tls_record):
 
 	global is_first_block_cli
@@ -1218,8 +1257,10 @@ def decrypt_TLS1_0_record(tls_record):
 	if debug == True and encrypt_then_mac == True:
 		print("TLSv1.0 decryption - encrypt_then_mac is used")
 
+	# get encryption_key and iv from key_material
 	if is_from_client == True:
 		enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
+		# only 1st IV comes from key_material in TLSv1.0
 		if is_first_block_cli:
 			iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_blocklen]
 			is_first_block_cli = False
@@ -1237,6 +1278,10 @@ def decrypt_TLS1_0_record(tls_record):
 		print("iv : %r len(iv) %r" % (iv, len(iv)))
 
 	cipher = AES.new(enc_key, AES.MODE_CBC, iv)
+
+	# default case
+	# ciphertext = Encrypt(plaintext + padLen + padding + mac)
+	# mac is computed over plaintext
 	if encrypt_then_mac == False:
 		try:
 			decrypted_record_padded = cipher.decrypt(tls_record)
@@ -1254,10 +1299,14 @@ def decrypt_TLS1_0_record(tls_record):
 		except ValueError:
 			print("  Decryption error !")
 
+		# in TLSv1.0 end of ciphertext will be IV for next record
 		if is_from_client == True:
 			last_iv_cli = tls_record[-16:]
 		else:
 			last_iv_srv = tls_record[-16:]
+	# If encrypt_then_mac,
+	# ciphertext = ENC(plaintext + padLen + padding) + mac
+	# mac is computed over ciphertext
 	else:
 		try:
 			real_mac = tls_record[- mac_algorithm_keylen:]
@@ -1273,13 +1322,17 @@ def decrypt_TLS1_0_record(tls_record):
 
 		except ValueError as e:
 			print("  Decryption error ! (%r)" % e)
+		# in TLSv1.0 end of ciphertext will be IV for next record
 		if is_from_client == True:
 			last_iv_cli = encrypted_record[-16:]
 		else:
 			last_iv_srv = encrypted_record[-16:]
 
+# Decrypt a TLSv1.0 application record
+# The record can be macced & encrypted (default) or encrypted & macced
 def decrypt_TLS1_1_record(tls_record):
 
+	# get encryption_key from key_material
 	if is_from_client == True:
 		enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
 	elif is_from_client == False:
@@ -1292,6 +1345,8 @@ def decrypt_TLS1_1_record(tls_record):
 
 	cipher = AES.new(enc_key, AES.MODE_CBC, iv)
 
+	# default case
+	# ciphertext = iv + Encrypt(plaintext + padLen + padding + mac)
 	if encrypt_then_mac == False:
 		try:
 			decrypted_record_padded = cipher.decrypt(tls_record)
@@ -1309,9 +1364,11 @@ def decrypt_TLS1_1_record(tls_record):
 
 		except ValueError:
 			print("  Decryption error !")
+	# If encrypt_then_mac,
+	# ciphertext = iv + ENC(plaintext + padLen + padding) + mac
 	else:
 		try:
-			# MAC is at the begining of the encrypted record
+			# MAC is at the end of the encrypted record
 			real_mac = tls_record[- mac_algorithm_keylen:]
 			encrypted_record = tls_record[cipher_algorithm_blocklen: -mac_algorithm_keylen]
 			decrypted_record = cipher.decrypt(encrypted_record)
@@ -1326,8 +1383,10 @@ def decrypt_TLS1_1_record(tls_record):
 		except ValueError as e:
 			print("  Decryption error ! (%r)" % e)
 
+# Decrypt an application record when GCM is used
 def decrypt_TLS_GCM_record(tls_record):
 
+	# get encryption_key and salt from key_material
 	if is_from_client == True:
 		enc_key = key_block[ : cipher_algorithm_keylen]
 		salt = key_block[2 * cipher_algorithm_keylen : 2 * cipher_algorithm_keylen + cipher_algorithm_saltlen]
@@ -1335,6 +1394,11 @@ def decrypt_TLS_GCM_record(tls_record):
 		enc_key = key_block[cipher_algorithm_keylen : 2 * cipher_algorithm_keylen]
 		salt = key_block[2 * cipher_algorithm_keylen + cipher_algorithm_saltlen : 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_saltlen]
 
+	# we have tls_record = nonce_explicit + aead_ciphertext
+	# - nonce_explicit is the 8-bytes explicit part of nonce/counter
+	# - nonce_explicit is incremented for each tls_record
+	# - final nonce is salt + nonce_explicit
+	# - last bytes of aead_ciphertext contains the GCM tag
 	nonce_explicit = tls_record[ : 8]
 	aead_ciphertext = tls_record[8 : ]
 	nonce = salt + nonce_explicit
