@@ -337,11 +337,14 @@ cipher_algorithm = ""
 # global variable for the selected mac algorithm
 mac_algorithm = ""
 
-# global variable for the selected encryption algorithm keylen
+# global variable for the selected encryption algorithm key len
 cipher_algorithm_keylen = 0
 
-# global variable for the selected encryption algorithm ivlen
-cipher_algorithm_ivlen = 0
+# global variable for the selected encryption algorithm block len
+cipher_algorithm_blocklen = 0
+
+# global varaible for the selected aead algorithm salt len
+cipher_algorithm_saltlen = 0
 
 # global variable for the selected mac algorithm keylen
 mac_algorithm_keylen = 0
@@ -425,13 +428,27 @@ def get_cipher_algo_keylen():
 		cipher_algorithm_keylen = 16
 	elif cipher_algorithm == "AES_256_CBC":
 		cipher_algorithm_keylen = 32
+	elif cipher_algorithm == "AES_128_GCM":
+		cipher_algorithm_keylen = 16
+	elif cipher_algorithm == "AES_256_GCM":
+		cipher_algorithm_keylen = 32
 
-def get_cipher_algo_ivlen():
+def get_cipher_algo_blocklen():
 	global cipher_algorithm
-	global cipher_algorithm_ivlen
+	global cipher_algorithm_blocklen
 
 	if cipher_algorithm == "AES_128_CBC" or cipher_algorithm == "AES_256_CBC":
-		cipher_algorithm_ivlen = 16
+		cipher_algorithm_blocklen = 16
+
+	if cipher_algorithm == "AES_128_GCM" or cipher_algorithm == "AES_256_GCM":
+		cipher_algorithm_blocklen = 16
+
+def get_cipher_algo_saltlen():
+	global cipher_algorithm
+	global cipher_algorithm_saltlen
+
+	if cipher_algorithm == "AES_128_GCM" or cipher_algorithm == "AES_256_GCM":
+		cipher_algorithm_saltlen = 4
 
 def get_mac_algo_keylen():
 	global mac_algorithm
@@ -899,7 +916,8 @@ def dissect_server_hello(hello_message):
 	selected_cipher_suite = int.from_bytes(hello_message[offset : offset + 2], 'big')
 	get_cipher_algo()
 	get_cipher_algo_keylen()
-	get_cipher_algo_ivlen()
+	get_cipher_algo_blocklen()
+	get_cipher_algo_saltlen()
 
 	get_mac_algo()
 	get_mac_algo_keylen()
@@ -1054,7 +1072,7 @@ def dissect_finished(hello_message):
 
 	if encrypt_then_mac == False:
 		if is_from_client == False:
-			last_iv_srv = hello_message[-cipher_algorithm_ivlen:]
+			last_iv_srv = hello_message[-cipher_algorithm_blocklen:]
 			is_first_block_srv = False
 	else:
 		if is_from_client == False:
@@ -1176,7 +1194,7 @@ def dissect_handshake_record(handshake_record):
 def unpad(padded_record):
 	last_byte = padded_record[-1]
 
-	if last_byte > cipher_algorithm_ivlen:
+	if last_byte > cipher_algorithm_blocklen:
 		print("Padding Error ! Padding is longer than the cipher block size ! (%r)" % last_byte)
 		return None
 	elif last_byte > 0:
@@ -1203,14 +1221,14 @@ def decrypt_TLS1_0_record(tls_record):
 	if is_from_client == True:
 		enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
 		if is_first_block_cli:
-			iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen]
+			iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_blocklen]
 			is_first_block_cli = False
 		else:
 			iv = last_iv_cli
 	elif is_from_client == False:
 		enc_key = key_block[2 * mac_algorithm_keylen + cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen]
 		if is_first_block_srv:
-			iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_ivlen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_ivlen]
+			iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_blocklen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_blocklen]
 			is_first_block_srv = False
 		else:
 			iv = last_iv_srv
@@ -1267,7 +1285,7 @@ def decrypt_TLS1_1_record(tls_record):
 	elif is_from_client == False:
 		enc_key = key_block[2 * mac_algorithm_keylen + cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen]
 
-	iv = tls_record[:cipher_algorithm_ivlen]
+	iv = tls_record[:cipher_algorithm_blocklen]
 
 	if debug == True:
 		print("iv : %r len(iv) %r" % (iv, len(iv)))
@@ -1280,7 +1298,7 @@ def decrypt_TLS1_1_record(tls_record):
 			decrypted_record = unpad(decrypted_record_padded)
 
 			# last plaintext bytes contains the MAC
-			plaintext = decrypted_record[cipher_algorithm_ivlen: - mac_algorithm_keylen]
+			plaintext = decrypted_record[cipher_algorithm_blocklen: - mac_algorithm_keylen]
 			real_mac = decrypted_record[- mac_algorithm_keylen:]
 
 			if debug == True:
@@ -1295,7 +1313,7 @@ def decrypt_TLS1_1_record(tls_record):
 		try:
 			# MAC is at the begining of the encrypted record
 			real_mac = tls_record[- mac_algorithm_keylen:]
-			encrypted_record = tls_record[cipher_algorithm_ivlen: -mac_algorithm_keylen]
+			encrypted_record = tls_record[cipher_algorithm_blocklen: -mac_algorithm_keylen]
 			decrypted_record = cipher.decrypt(encrypted_record)
 			plaintext = unpad(decrypted_record)
 
@@ -1309,34 +1327,30 @@ def decrypt_TLS1_1_record(tls_record):
 			print("  Decryption error ! (%r)" % e)
 
 def decrypt_TLS_GCM_record(tls_record):
-	print("plip");
-	print("tls_record : %r" % tls_record)
-	print("plop")
 
-	aead_ciphertext = b'\x50\xC9\x11\x63\xF3\xE9\xFC\x2B\xDB\xFE\x4F\xFA\x96\xFF\x6A\xAA\x27\x65\x0F\x34\x54\x5F\xA8\x03\x82\x36\x0D\x85\x8B\xEB\x4A\xA1\x5D\x68\x5E\xAF\x1A\xC0\xC2\x77\x06\xEA\x76\x60\xD5\x4A\x54\xA2\xF8\x60\x1E\xA5\x4A\x3E\x0E\x14\x3F\x84\x68\x0B\x63\xFC\x36\x7D\x94\xDD\x5E\x4C\x63\x1A\xF9\x29\x24\x13\x22\x01\x93\x69\x92\xB1'
+	if is_from_client == True:
+		enc_key = key_block[ : cipher_algorithm_keylen]
+		salt = key_block[2 * cipher_algorithm_keylen : 2 * cipher_algorithm_keylen + cipher_algorithm_saltlen]
+	elif is_from_client == False:
+		enc_key = key_block[cipher_algorithm_keylen : 2 * cipher_algorithm_keylen]
+		salt = key_block[2 * cipher_algorithm_keylen + cipher_algorithm_saltlen : 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_saltlen]
 
-	key = b'\xC5\x2F\xB2\x44\xA8\xAD\x72\x1F\xB4\xDB\x9D\x4B\x2A\x97\x05\xDA\x06\x72\x3A\x7A\x74\x91\x6E\xE8\x9E\x2D\x40\x2A\x02\x04\x45\x9B'
+	nonce_explicit = tls_record[ : 8]
+	aead_ciphertext = tls_record[8 : ]
+	nonce = salt + nonce_explicit
 
-	nonce = b'\x29\xAB\x12\x92\x00\x00\x00\x00\x00\x00\x00\x01'
+	additional_data =  nonce_explicit + b'\x17' + selected_version.to_bytes(2, 'big') + (len(aead_ciphertext) - cipher_algorithm_blocklen).to_bytes(2, 'big')
 
-	additional_data = b'\x00\x00\x00\x00\x00\x00\x00\x01\x17\x03\x03\x00\x40'
+	if debug == True:
+		print("salt : %r len(salt) %r" % (salt, len(salt)))
+		print("nonce_explicit : %r" % nonce_explicit)
+		print("nonce : %r" % nonce)
 
-	print("dummy tls_record : %r" % tls_record)
-	print("dummy key : %r" % key)
-	print("dummy nonce : %r" % nonce)
-	print("dummy additional_data : %r" % additional_data)
-
-	cipher = AES.new(key, AES.MODE_GCM, nonce)
+	cipher = AES.new(enc_key, AES.MODE_GCM, nonce)
 	cipher.update(additional_data)
+	plaintext = cipher.decrypt(aead_ciphertext[: - cipher_algorithm_blocklen])
 
-	#plaintext = cipher.decrypt(aead_ciphertext[: - 16])
-	try:
-		plaintext = cipher.decrypt_and_verify(aead_ciphertext[: - 16], aead_ciphertext[-16:])
-		print("plaintext : %r" % plaintext)
-	except (ValueError, KeyError) as e:
-		print("  Decryption error ! (%r)" % e)
-
-	exit(0)
+	print("plaintext : %r (%r bytes)" % (plaintext, len(plaintext)))
 
 # Parse an Application record
 # Basically nothing to do, unless a keylogfile is used
