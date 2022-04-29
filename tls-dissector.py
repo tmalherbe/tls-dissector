@@ -1308,6 +1308,36 @@ def decrypt_TLS1_1_record(tls_record):
 		except ValueError as e:
 			print("  Decryption error ! (%r)" % e)
 
+def decrypt_TLS_GCM_record(tls_record):
+	print("plip");
+	print("tls_record : %r" % tls_record)
+	print("plop")
+
+	aead_ciphertext = b'\x50\xC9\x11\x63\xF3\xE9\xFC\x2B\xDB\xFE\x4F\xFA\x96\xFF\x6A\xAA\x27\x65\x0F\x34\x54\x5F\xA8\x03\x82\x36\x0D\x85\x8B\xEB\x4A\xA1\x5D\x68\x5E\xAF\x1A\xC0\xC2\x77\x06\xEA\x76\x60\xD5\x4A\x54\xA2\xF8\x60\x1E\xA5\x4A\x3E\x0E\x14\x3F\x84\x68\x0B\x63\xFC\x36\x7D\x94\xDD\x5E\x4C\x63\x1A\xF9\x29\x24\x13\x22\x01\x93\x69\x92\xB1'
+
+	key = b'\xC5\x2F\xB2\x44\xA8\xAD\x72\x1F\xB4\xDB\x9D\x4B\x2A\x97\x05\xDA\x06\x72\x3A\x7A\x74\x91\x6E\xE8\x9E\x2D\x40\x2A\x02\x04\x45\x9B'
+
+	nonce = b'\x29\xAB\x12\x92\x00\x00\x00\x00\x00\x00\x00\x01'
+
+	additional_data = b'\x00\x00\x00\x00\x00\x00\x00\x01\x17\x03\x03\x00\x40'
+
+	print("dummy tls_record : %r" % tls_record)
+	print("dummy key : %r" % key)
+	print("dummy nonce : %r" % nonce)
+	print("dummy additional_data : %r" % additional_data)
+
+	cipher = AES.new(key, AES.MODE_GCM, nonce)
+	cipher.update(additional_data)
+
+	#plaintext = cipher.decrypt(aead_ciphertext[: - 16])
+	try:
+		plaintext = cipher.decrypt_and_verify(aead_ciphertext[: - 16], aead_ciphertext[-16:])
+		print("plaintext : %r" % plaintext)
+	except (ValueError, KeyError) as e:
+		print("  Decryption error ! (%r)" % e)
+
+	exit(0)
+
 # Parse an Application record
 # Basically nothing to do, unless a keylogfile is used
 #
@@ -1327,7 +1357,10 @@ def dissect_application_record(tls_record):
 			decrypt_TLS1_1_record(tls_record)
 		# TLSv1.2
 		elif selected_version == 0x0303:
-			decrypt_TLS1_1_record(tls_record)
+			if (cipher_suites[selected_cipher_suite]).find('GCM') != -1:
+			    decrypt_TLS_GCM_record(tls_record)
+			else:
+			    decrypt_TLS1_1_record(tls_record)
 
 # global variables to store piece of a TLS packet
 # in case this packet is fragmented into several
