@@ -1410,6 +1410,7 @@ def decrypt_TLS_GCM_record(tls_record):
 		print("nonce_explicit : %r" % nonce_explicit)
 		print("nonce : %r" % nonce)
 
+	# TODO - tag verification isn't done
 	cipher = AES.new(enc_key, AES.MODE_GCM, nonce)
 	cipher.update(additional_data)
 	plaintext = cipher.decrypt(aead_ciphertext[: - cipher_algorithm_blocklen])
