@@ -270,13 +270,13 @@ def is_a_tls13_ciphersuite(cipher_suite):
 def get_cipher_suites(cipher_suites_array):
 	for cipher_suite in cipher_suites_array:
 		try:
-		    print("\t - " + cipher_suites[cipher_suite])
+		    print("  - " + cipher_suites[cipher_suite])
 		except:
 		    print("cipher_suite %r is unknown" % hex(cipher_suite))
 
 ## compression ##
 def get_compression_suites(compression_suites_array):
-	print("\t - %r" % compression_suites_array)
+	print("  - %r" % compression_suites_array)
 
 ## extensions ##
 extension_types = {
@@ -687,6 +687,12 @@ def tls_packet_get_header(tls_packet, offset):
 	packet_len = int.from_bytes(tls_packet[offset + 2 : offset + 4], 'big')
 	return (packet_version, packet_len)
 
+def get_packet_direction():
+	if is_from_client:
+		print(" tclient -> server")
+	else:
+		print(" server -> client")
+
 # Check IP/TCP layer:
 # - IP4/IPv6 layer is mandatory
 # - TCP layer is mandatory
@@ -699,20 +705,20 @@ def check_tcpip_layer(packet, index):
 	# decide if the packet is from client or from server
 	if packet.haslayer(IP):
 		if packet[IP].src == addr_client and packet[IP].dst == addr_server:
-			print("client -> server")
+			#print("client -> server")
 			is_from_client = True
 		elif packet[IP].dst == addr_client and packet[IP].src == addr_server:
-			print("server -> client")
+			#print("server -> client")
 			is_from_client = False
 		else:
 			print("Error: packet %r doesn't belong to the TLS stream" % index)
 			exit(0)
 	elif packet.haslayer(IPv6):
 		if packet[IPv6].src == addr_client and packet[IPv6].dst == addr_server:
-			print("client -> server")
+			#print("client -> server")
 			is_from_client = True
 		elif packet[IPv6].dst == addr_client and packet[IPv6].src == addr_server:
-			print("server -> client")
+			#print("server -> client")
 			is_from_client = False
 		else:
 			print("Error: packet %r doesn't belong to the TLS stream" % index)
@@ -806,7 +812,7 @@ def parse_extension(hello_message, offset):
 	extension_total_len = int.from_bytes(hello_message[offset : offset + 2], 'big')
 	offset += 2
 
-	print("extension total length : %r" % extension_total_len)
+	print("  extension total length : %r" % extension_total_len)
 
 	remaining_len = extension_total_len
 
@@ -824,9 +830,11 @@ def parse_extension(hello_message, offset):
 		offset += extension_len
 		remaining_len -= extension_len
 
-		print("\t - extension type : %r (%r)" % (extension_type, get_extension_type(extension_type)))
-		print("\t - extension length : %r" % extension_len)
-		print("\t - extension content : %r" % extension_content)
+		print("  - extension type : %r (%r)" % (extension_type, get_extension_type(extension_type)))
+		print("  - extension length : %r" % extension_len)
+
+		if debug == True:
+		    print("  - extension content : %r" % extension_content)
 
 		# switch over extension type to analyse the extension
 		# supported_version extension
@@ -836,7 +844,7 @@ def parse_extension(hello_message, offset):
 		elif extension_type == 22 and is_from_client == False:
 		    global encrypt_then_mac
 		    encrypt_then_mac = True
-		    print("\t => Server wants to use encrypt_then_mac !")
+		    print("  => Server wants to use encrypt_then_mac !")
 
 	return offset
 
@@ -899,18 +907,18 @@ def dissect_client_hello(hello_message):
 		compression_suites.append(compression_suite)
 		offset += 1
 
-	print("ClientHello - TLS version : %r (%r)" % (hex(packet_version),  get_tls_version(packet_version)))
-	print("ClientHello - Random : %r" % random)
+	print("  ClientHello - TLS version : %r (%r)" % (hex(packet_version),  get_tls_version(packet_version)))
+	print("  ClientHello - Random : %r" % random)
 
 	if session_id_len > 0:
-		print("ClientHello - SessionID : %r" % session_id)
+		print("  ClientHello - SessionID : %r" % session_id)
 	else:
-		print("ClientHello - no SessionID")
+		print("  ClientHello - no SessionID")
 
-	print("ClientHello : %r CipherSuites :" % cipher_suite_number)
+	print("  ClientHello : %r CipherSuites :" % cipher_suite_number)
 	get_cipher_suites(cipher_suites)
 
-	print("ClientHello : %r CompressionSuites :" % compression_suite_number)
+	print("  ClientHello : %r CompressionSuites :" % compression_suite_number)
 	get_compression_suites(compression_suites)
 
 	# ClientHello extensions
@@ -968,27 +976,27 @@ def dissect_server_hello(hello_message):
 		compression_suites.append(compression_suite)
 		offset += 1
 	
-	print("ServerHello - TLS version : %r (%r)" % (hex(packet_version),  get_tls_version(packet_version)))
-	print("ServerHello - Random : %r" % random)
+	print("  ServerHello - TLS version : %r (%r)" % (hex(packet_version),  get_tls_version(packet_version)))
+	print("  ServerHello - Random : %r" % random)
 	
 	if session_id_len > 0:
-		print("ServerHello - SessionID : %r" % session_id)
+		print("  ServerHello - SessionID : %r" % session_id)
 	else:
-		print("ServerHello - no SessionID")
+		print("  ServerHello - no SessionID")
 	
-	print("ServerHello - Selected CipherSuite : %r" % cipher_suites[selected_cipher_suite])
+	print("  ServerHello - Selected CipherSuite : %r" % cipher_suites[selected_cipher_suite])
 
 	if is_a_tls13_ciphersuite(selected_cipher_suite) == False:
-		print("ServerHello - KeyExchangeAlgorithm : %r" % key_exchange_algorithm)
+		print("  ServerHello - KeyExchangeAlgorithm : %r" % key_exchange_algorithm)
 
-	print("ServerHello : %r CompressionSuites :" % compression_suite_number)
+	print("  ServerHello : %r CompressionSuites :" % compression_suite_number)
 	get_compression_suites(compression_suites)
 
 	# selected_version will be overriden here because in TLSv1.3 server tells which version
 	# was chosen using this extension
 	offset = parse_extension(hello_message, offset)
 
-	print("ServerHello - Server selected %r" % get_tls_version(selected_version))
+	print("  ServerHello - Server selected %r" % get_tls_version(selected_version))
 
 	return offset
 
@@ -1016,6 +1024,7 @@ def dump_b64_cert(certificate):
 
 	while i < len(b64_cert_raw):
 		b64_cert_chunk = b64_cert_raw[i : i + 64]
+		b64_cert += "  "
 		b64_cert += b64_cert_chunk.decode('ascii')
 		b64_cert += "\n"
 		i += 64
@@ -1032,7 +1041,7 @@ def dissect_certificates_chain(hello_message):
 	offset += 3
 	remaining_len = certificates_len
 
-	print("certificates chain length : %r" % certificates_len)
+	print("  certificates chain length : %r" % certificates_len)
 
 	while remaining_len > 0:
 		certificate_len = int.from_bytes(hello_message[offset : offset + 3], 'big')
@@ -1040,14 +1049,14 @@ def dissect_certificates_chain(hello_message):
 		remaining_len -= 3
 
 		certificate = hello_message[offset : offset + certificate_len]
-		print("certificate n°%r, %r (%r) bytes : \n%s" % (certificate_count, certificate_len, hex(certificate_len), dump_b64_cert(certificate)))
+		print("  certificate n°%r, %r (%r) bytes : \n%s" % (certificate_count, certificate_len, hex(certificate_len), dump_b64_cert(certificate)))
 
 		offset += certificate_len
 		remaining_len -= certificate_len
 
 		certificate_count += 1
 
-	print("read all the certificates ! ")
+	print("  read all the certificates ! ")
 
 	return offset
 
@@ -1058,15 +1067,15 @@ def dissect_server_key_exchange(hello_message):
 	offset = 0
 
 	if key_exchange_algorithm == "ECDHE_RSA":
-		print(key_exchange_algorithm)
+		print("  key Exchange Algorithm : %s" % key_exchange_algorithm)
 	elif key_exchange_algorithm == "DHE_DSS":
-		print(key_exchange_algorithm)
+		print("  key Exchange Algorithm : %s" % key_exchange_algorithm)
 	elif key_exchange_algorithm == "DHE_RSA":
-		print(key_exchange_algorithm)
+		print("  key Exchange Algorithm : %s" % key_exchange_algorithm)
 	elif key_exchange_algorithm == "RSA":
-		print(key_exchange_algorithm)
+		print("  key Exchange Algorithm : %s" % key_exchange_algorithm)
 	else:
-		print(key_exchange_algorithm)
+		print("  key Exchange Algorithm : %s" % key_exchange_algorithm)
 	return offset
 
 # Parse a ClientKeyExchange message
@@ -1076,23 +1085,15 @@ def dissect_client_key_exchange(hello_message):
 	offset = 0
 
 	if key_exchange_algorithm == "ECDHE_RSA":
-		print(key_exchange_algorithm)
+		print("  key Exchange Algorithm : %s" % key_exchange_algorithm)
 	elif key_exchange_algorithm == "DHE_DSS":
-		print(key_exchange_algorithm)
+		print("  key Exchange Algorithm : %s" % key_exchange_algorithm)
 	elif key_exchange_algorithm == "DHE_RSA":
-		print(key_exchange_algorithm)
+		print("  key Exchange Algorithm : %s" % key_exchange_algorithm)
 	elif key_exchange_algorithm == "RSA":
-		print(key_exchange_algorithm)
+		print("  key Exchange Algorithm : %s" % key_exchange_algorithm)
 	else:
-		print(key_exchange_algorithm)
-
-	client_key_exchange_len = int.from_bytes(hello_message[offset - 3 : offset], 'big')
-	client_key_exchange = hello_message[offset : offset + client_key_exchange_len]
-	offset += client_key_exchange_len
-
-	print("client_key_exchange_len length : %r" % client_key_exchange_len)
-	print("client_key_exchange : %r" % client_key_exchange)
-
+		print("  key Exchange Algorithm : %s" % key_exchange_algorithm)
 	return offset
 
 # Parse a Finished message
@@ -1121,7 +1122,7 @@ def dissect_finished(hello_message):
 # Parse a ServerHelloDone message
 #
 def dissect_server_hello_done(tls_packet):
-	print("server_hello_done - nothing to do")
+	print("  server_hello_done - nothing to do")
 
 # Parse an Handshake record
 # - Note that an Handshake record can contain multiple handshake messages
@@ -1145,21 +1146,29 @@ def dissect_handshake_record(handshake_record):
 		# We shall have at least 4 bytes
 		# (content_type + length)
 		if (record_len - offset) < 4:
-			print("Error: The Handshake record is too short (%r remaining bytes)" % (record_len - offset))
+			print("  Error: The Handshake record is too short (%r remaining bytes)" % (record_len - offset))
 			exit(0)
 
-		# TODO - this doesn't behave properly with Finished message (and other encrypted messages)
+		# Read content_type (1 byte) and length (3 bytes)
 		(message_type, message_len) = handshake_record_get_header(handshake_record, offset)
-		offset += 4
 
-		print("  Handshake message n°%r:" % message_index)
-		print("  Handshake Type %r (%r)" % (message_type, get_handshake_type(message_type)))
+		# If message_type is unknown, message is probably an encrypted Finished 
+		if message_type not in handshake_types:
+			if (is_from_client and client_finished_handshake) or server_finished_handshake:
+			    print("  Handshake Type unknown, probably a Finished message")
+			    message_len = record_len
+			    message_type = 20
+			else:
+			    print("  Unknown handshake message (%r) !" % message_type)
+		else:
+			offset += 4
+			print("  Handshake Type %r (%r)" % (message_type, get_handshake_type(message_type)))
+
 		print("  Message length : %r" % message_len)
-
 		handshake_message = handshake_record[offset : offset + message_len]
 
 		if debug == True:
-			print("handshake_message %r : %r" % (message_index, handshake_message))
+			print("  handshake_message %r : %r" % (message_index, handshake_message))
 		offset += message_len
 
 		# process the Handshake message
@@ -1203,6 +1212,7 @@ def dissect_handshake_record(handshake_record):
 		# case 20 - Finished
 		elif message_type == 20:
 			dissect_finished(handshake_message)
+			offset += (record_len - 4)
 		# case 24 - KeyUpdate
 		elif message_type == 24:
 			dissect_key_update(handshake_message)
@@ -1211,18 +1221,9 @@ def dissect_handshake_record(handshake_record):
 			dissect_message_hash(handshake_message)
 		# default case - can be an encrypted handshake message
 		else:
-			# if the handshake message is weird and ChangeCipherSpec was seen,
-			# it's probably the Finished message.
-			if (is_from_client and client_finished_handshake):
-			    dissect_finished(handshake_message)
-			    offset += (record_len - 4)
-			elif server_finished_handshake:
-			    dissect_finished(handshake_message)
-			    offset += (record_len - 4)
 			# if the handshake message is weird but no ChangeCipherSpec was seen,
 			# ...then the message is just weird
-			else:
-			    print("Unknown handshake message (%r) !" % message_type)
+			print("  Unknown handshake message (%r) !" % message_type)
 
 		# increment the record counter
 		message_index += 1
@@ -1233,12 +1234,12 @@ def unpad(padded_record):
 	last_byte = padded_record[-1]
 
 	if last_byte > cipher_algorithm_blocklen:
-		print("Padding Error ! Padding is longer than the cipher block size ! (%r)" % last_byte)
+		print("  Padding Error ! Padding is longer than the cipher block size ! (%r)" % last_byte)
 		return None
 	elif last_byte > 0:
 		for i in range(last_byte + 1):
 			if padded_record[-i - 1] != last_byte:
-				print("Padding Error ! Padding is not correct (padded_record : %r)" % padded_record)
+				print("  Padding Error ! Padding is not correct (padded_record : %r)" % padded_record)
 				return None
 
 	unpadded_record = padded_record[: - last_byte - 1]
@@ -1255,7 +1256,7 @@ def decrypt_TLS1_0_record(tls_record):
 	global last_iv_srv
 
 	if debug == True and encrypt_then_mac == True:
-		print("TLSv1.0 decryption - encrypt_then_mac is used")
+		print("  TLSv1.0 decryption - encrypt_then_mac is used")
 
 	# get encryption_key and iv from key_material
 	if is_from_client == True:
@@ -1357,8 +1358,8 @@ def decrypt_TLS1_1_record(tls_record):
 			real_mac = decrypted_record[- mac_algorithm_keylen:]
 
 			if debug == True:
-				print("decrypted_record_padded : %r" % decrypted_record_padded)
-				print("decrypted_record : %r" % decrypted_record)
+				print("  decrypted_record_padded : %r" % decrypted_record_padded)
+				print("  decrypted_record : %r" % decrypted_record)
 				print("  Mac : %r" % real_mac)
 			print("  Decrypted data: %r" % plaintext)
 
@@ -1406,16 +1407,16 @@ def decrypt_TLS_GCM_record(tls_record):
 	additional_data =  nonce_explicit + b'\x17' + selected_version.to_bytes(2, 'big') + (len(aead_ciphertext) - cipher_algorithm_blocklen).to_bytes(2, 'big')
 
 	if debug == True:
-		print("salt : %r len(salt) %r" % (salt, len(salt)))
-		print("nonce_explicit : %r" % nonce_explicit)
-		print("nonce : %r" % nonce)
+		print("  salt : %r len(salt) %r" % (salt, len(salt)))
+		print("  nonce_explicit : %r" % nonce_explicit)
+		print("  nonce : %r" % nonce)
 
 	# TODO - tag verification isn't done
 	cipher = AES.new(enc_key, AES.MODE_GCM, nonce)
 	cipher.update(additional_data)
 	plaintext = cipher.decrypt(aead_ciphertext[: - cipher_algorithm_blocklen])
 
-	print("plaintext : %r (%r bytes)" % (plaintext, len(plaintext)))
+	print("  plaintext : %r" % plaintext)
 
 # Parse an Application record
 # Basically nothing to do, unless a keylogfile is used
@@ -1462,6 +1463,7 @@ def dissect_tls_packet(packet, index):
 
 	# check IP&TCP layers
 	check_tcpip_layer(packet, index)
+	#get_packet_direction()
 
 	tls_packet = bytes(packet[TCP].payload)
 
@@ -1484,6 +1486,7 @@ def dissect_tls_packet(packet, index):
 	tls_packet_len = len(tls_packet)
 
 	print("TLS packet %r, length %r" % (index, tls_packet_len))
+	get_packet_direction()
 
 	# absolute offset in TCP payload
 	# if TLS packet is fragmented
