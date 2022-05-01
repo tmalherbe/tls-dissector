@@ -17,25 +17,23 @@ def check_tcpip_layer(packet, index):
 
 	from dissector_globals import addr_client, addr_server
 
-	#global addr_client, addr_server
-	print("addr_client %r" % addr_client)
 	# decide if the packet is from client or from server
 	if packet.haslayer(IP):
 		if packet[IP].src == addr_client and packet[IP].dst == addr_server:
-			#print("client -> server")
+			print("%r -> %r" %(addr_client, addr_server) )
 			dissector_globals.is_from_client = True
 		elif packet[IP].dst == addr_client and packet[IP].src == addr_server:
-			#print("server -> client")
+			print("%r -> %r" %(addr_server, addr_client) )
 			dissector_globals.is_from_client = False
 		else:
 			print("Error: packet %r doesn't belong to the TLS stream" % index)
 			exit(0)
 	elif packet.haslayer(IPv6):
 		if packet[IPv6].src == addr_client and packet[IPv6].dst == addr_server:
-			#print("client -> server")
+			print("%r -> %r" %(addr_client, addr_server) )
 			dissector_globals.is_from_client = True
 		elif packet[IPv6].dst == addr_client and packet[IPv6].src == addr_server:
-			#print("server -> client")
+			print("%r -> %r" %(addr_server, addr_client) )
 			dissector_globals.is_from_client = False
 		else:
 			print("Error: packet %r doesn't belong to the TLS stream" % index)
