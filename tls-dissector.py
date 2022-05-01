@@ -1014,16 +1014,22 @@ def decrypt_TLS1_0_record(tls_record):
 # The record can be macced & encrypted (default) or encrypted & macced
 def decrypt_TLS1_1_record(tls_record):
 
+	global seq_num_cli
+	global seq_num_srv
+
 	# get encryption_key from key_material
 	if dissector_globals.is_from_client == True:
 		enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
+		seq_num = seq_num_cli
 	elif dissector_globals.is_from_client == False:
 		enc_key = key_block[2 * mac_algorithm_keylen + cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen]
+		seq_num = seq_num_srv
 
 	iv = tls_record[:cipher_algorithm_blocklen]
 
 	if debug == True:
-		print("iv : %r len(iv) %r" % (iv, len(iv)))
+		print("  iv : %r len(iv) %r" % (iv, len(iv)))
+		print("  seq_num : %r " % seq_num)
 
 	cipher = AES.new(enc_key, AES.MODE_CBC, iv)
 
@@ -1064,6 +1070,15 @@ def decrypt_TLS1_1_record(tls_record):
 
 		except ValueError as e:
 			print("  Decryption error ! (%r)" % e)
+
+	# increment sequence number
+	seq_num_int = int.from_bytes(seq_num, 'big')
+	seq_num_int += 1
+	seq_num = seq_num_int.to_bytes(8, 'big')
+	if dissector_globals.is_from_client:
+		seq_num_cli = seq_num
+	else:
+		seq_num_srv = seq_num
 
 # Decrypt an application record when GCM is used
 def decrypt_TLS_GCM_record(tls_record):
