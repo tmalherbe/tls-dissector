@@ -75,6 +75,10 @@ last_iv_srv = None
 ## (by default TLS uses mac then encrypt)          ##
 encrypt_then_mac = False
 
+## sequence numbers for GCM mode ##
+seq_num_cli = b''
+seq_num_srv = b''
+
 ## set cipher_algorithm global state variable during ServerHello ##
 def get_cipher_algo():
 	global selected_cipher_suite
@@ -322,6 +326,8 @@ def derivate_crypto_material():
 
 	global key_block
 	global debug
+	global seq_num_cli
+	global seq_num_srv
 
 	if keylogfile != None and selected_version != None:
 
@@ -365,6 +371,10 @@ def derivate_crypto_material():
 
 		seed = server_random + client_random
 		key_block = PRF(master_secret, b'key expansion', seed)
+
+		if selected_version == 0x0303 and (cipher_suites[selected_cipher_suite]).find('GCM') != -1:
+			seq_num_cli = b'\x00\x00\x00\x00\x00\x00\x00\x01'
+			seq_num_srv = b'\x00\x00\x00\x00\x00\x00\x00\x01'
 
 # TLS records analysis functions
 # These functions are sorted according to the record type value :
@@ -1019,11 +1029,16 @@ def decrypt_TLS1_1_record(tls_record):
 # Decrypt an application record when GCM is used
 def decrypt_TLS_GCM_record(tls_record):
 
+	global seq_num_cli
+	global seq_num_srv
+
 	# get encryption_key and salt from key_material
 	if dissector_globals.is_from_client == True:
+		seq_num = seq_num_cli
 		enc_key = key_block[ : cipher_algorithm_keylen]
 		salt = key_block[2 * cipher_algorithm_keylen : 2 * cipher_algorithm_keylen + cipher_algorithm_saltlen]
 	elif dissector_globals.is_from_client == False:
+		seq_num = seq_num_srv
 		enc_key = key_block[cipher_algorithm_keylen : 2 * cipher_algorithm_keylen]
 		salt = key_block[2 * cipher_algorithm_keylen + cipher_algorithm_saltlen : 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_saltlen]
 
@@ -1035,12 +1050,12 @@ def decrypt_TLS_GCM_record(tls_record):
 	nonce_explicit = tls_record[ : 8]
 	aead_ciphertext = tls_record[8 : ]
 	nonce = salt + nonce_explicit
-
-	additional_data =  nonce_explicit + b'\x17' + selected_version.to_bytes(2, 'big') + (len(aead_ciphertext) - cipher_algorithm_blocklen).to_bytes(2, 'big')
+	additional_data =  seq_num + b'\x17' + selected_version.to_bytes(2, 'big') + (len(aead_ciphertext) - cipher_algorithm_blocklen).to_bytes(2, 'big')
 
 	if debug == True:
+		print("  seq_num : %r " % seq_num)
 		print("  salt : %r len(salt) %r" % (salt, len(salt)))
-		print("  nonce_explicit : %r" % nonce_explicit)
+		print("  nonce_explicit : %r" % binascii.hexlify(nonce_explicit))
 		print("  nonce : %r" % nonce)
 
 	# TODO - tag verification isn't done
@@ -1049,6 +1064,23 @@ def decrypt_TLS_GCM_record(tls_record):
 	plaintext = cipher.decrypt(aead_ciphertext[: - cipher_algorithm_blocklen])
 
 	print("  plaintext : %r" % plaintext)
+	print("  tag from packet : %r " % binascii.hexlify(aead_ciphertext[- cipher_algorithm_blocklen : ]))
+
+	# increment sequence number
+	seq_num_int = int.from_bytes(seq_num, 'big')
+	seq_num_int += 1
+	seq_num = seq_num_int.to_bytes(8, 'big')
+	if dissector_globals.is_from_client:
+		seq_num_cli = seq_num
+	else:
+		seq_num_srv = seq_num
+
+	# decrypt the ciphertext is good, but check the tag is even better
+	try:
+		tag = cipher.verify(aead_ciphertext[- cipher_algorithm_blocklen : ])
+		print("  GCM tag is correct :-)")
+	except ValueError:
+		print("  GCM tag is correct :-(")
 
 # Parse an Application record
 # Basically nothing to do, unless a keylogfile is used
