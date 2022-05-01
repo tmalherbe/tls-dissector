@@ -931,7 +931,7 @@ def decrypt_TLS1_0_record(tls_record):
 
 	# default case
 	# ciphertext = Encrypt(plaintext + padLen + padding + mac)
-	# mac is computed over plaintext
+	# mac = MAC(seq_num + type + version + len(plaintext) + plaintext)
 	if encrypt_then_mac == False:
 		try:
 			decrypted_record_padded = cipher.decrypt(tls_record)
@@ -966,8 +966,9 @@ def decrypt_TLS1_0_record(tls_record):
 		else:
 			last_iv_srv = tls_record[-16:]
 	# If encrypt_then_mac,
-	# ciphertext = ENC(plaintext + padLen + padding) + mac
-	# mac is computed over ciphertext
+	# ciphertext = ENC(plaintext + padLen + padding)
+	# ciphertext_mac = ciphertext + mac
+	# mac = MAC(seq_num + type + version + len(ciphertext) + ciphertext)
 	else:
 		try:
 			real_mac = tls_record[- mac_algorithm_keylen:]
@@ -980,7 +981,6 @@ def decrypt_TLS1_0_record(tls_record):
 				print("  encrypted record with mac : %r (%r bytes)" % (encrypted_record, len(encrypted_record)))
 				print("  decrypted_record : %r" % decrypted_record)
 			print("  Decrypted data : %r" % plaintext)
-
 
 			#also with have to check the mac
 			macced_data =  seq_num + b'\x17' + selected_version.to_bytes(2, 'big') + (len(encrypted_record)).to_bytes(2, 'big') + encrypted_record
@@ -1019,9 +1019,11 @@ def decrypt_TLS1_1_record(tls_record):
 
 	# get encryption_key from key_material
 	if dissector_globals.is_from_client == True:
+		mac_key = key_block[:mac_algorithm_keylen]
 		enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
 		seq_num = seq_num_cli
 	elif dissector_globals.is_from_client == False:
+		mac_key = key_block[mac_algorithm_keylen : 2 * mac_algorithm_keylen]
 		enc_key = key_block[2 * mac_algorithm_keylen + cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen]
 		seq_num = seq_num_srv
 
@@ -1034,7 +1036,8 @@ def decrypt_TLS1_1_record(tls_record):
 	cipher = AES.new(enc_key, AES.MODE_CBC, iv)
 
 	# default case
-	# ciphertext = iv + Encrypt(plaintext + padLen + padding + mac)
+	# ciphertext_mac = iv + Encrypt(plaintext + padLen + padding + mac)
+	# mac = MAC(seq_num + type + version + len(plaintext) + plaintext)
 	if encrypt_then_mac == False:
 		try:
 			decrypted_record_padded = cipher.decrypt(tls_record)
@@ -1050,10 +1053,23 @@ def decrypt_TLS1_1_record(tls_record):
 				print("  Mac : %r" % real_mac)
 			print("  Decrypted data: %r" % plaintext)
 
+			# also with have to check the mac
+			macced_data =  seq_num + b'\x17' + selected_version.to_bytes(2, 'big') + (len(plaintext)).to_bytes(2, 'big') + plaintext
+			h = hmac.new(mac_key, digestmod = mac_algorithm)
+			h.update(macced_data)
+			computed_hmac = h.digest()
+
+			if computed_hmac == real_mac:
+				print("  GCM tag is correct :-)")
+			else:
+				print("  GCM tag is not correct :-(")
+
 		except ValueError:
 			print("  Decryption error !")
 	# If encrypt_then_mac,
-	# ciphertext = iv + ENC(plaintext + padLen + padding) + mac
+	# ciphertext = iv + ENC(plaintext + padLen + padding)
+	# ciphertext_mac = iv + ciphertext + mac
+	# mac = MAC(seq_num + type + version + len(ciphertext) + ciphertext)
 	else:
 		try:
 			# MAC is at the end of the encrypted record
@@ -1067,6 +1083,17 @@ def decrypt_TLS1_1_record(tls_record):
 				print("  encrypted record with mac : %r (%r bytes)" % (encrypted_record, len(encrypted_record)))
 				print("  decrypted_record : %r" % decrypted_record)
 			print("  Decrypted data : %r" % plaintext)
+
+			#also with have to check the mac
+			macced_data =  seq_num + b'\x17' + selected_version.to_bytes(2, 'big') + (len(tls_record[: -mac_algorithm_keylen])).to_bytes(2, 'big') + tls_record[: -mac_algorithm_keylen]
+			h = hmac.new(mac_key, digestmod = mac_algorithm)
+			h.update(macced_data)
+			computed_hmac = h.digest()
+
+			if computed_hmac == real_mac:
+				print("  GCM tag is correct :-)")
+			else:
+				print("  GCM tag is not correct :-(")
 
 		except ValueError as e:
 			print("  Decryption error ! (%r)" % e)
