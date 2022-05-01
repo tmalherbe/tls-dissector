@@ -1052,19 +1052,25 @@ def decrypt_TLS_GCM_record(tls_record):
 	nonce = salt + nonce_explicit
 	additional_data =  seq_num + b'\x17' + selected_version.to_bytes(2, 'big') + (len(aead_ciphertext) - cipher_algorithm_blocklen).to_bytes(2, 'big')
 
+	# decrypt the ciphertext !
+	cipher = AES.new(enc_key, AES.MODE_GCM, nonce)
+	cipher.update(additional_data)
+	plaintext = cipher.decrypt(aead_ciphertext[: - cipher_algorithm_blocklen])
+
 	if debug == True:
 		print("  seq_num : %r " % seq_num)
 		print("  salt : %r len(salt) %r" % (salt, len(salt)))
 		print("  nonce_explicit : %r" % binascii.hexlify(nonce_explicit))
 		print("  nonce : %r" % nonce)
-
-	# TODO - tag verification isn't done
-	cipher = AES.new(enc_key, AES.MODE_GCM, nonce)
-	cipher.update(additional_data)
-	plaintext = cipher.decrypt(aead_ciphertext[: - cipher_algorithm_blocklen])
-
+		print("  tag from packet : %r " % binascii.hexlify(aead_ciphertext[- cipher_algorithm_blocklen : ]))
 	print("  plaintext : %r" % plaintext)
-	print("  tag from packet : %r " % binascii.hexlify(aead_ciphertext[- cipher_algorithm_blocklen : ]))
+
+	# decrypt the ciphertext is good, but check the tag is even better
+	try:
+		tag = cipher.verify(aead_ciphertext[- cipher_algorithm_blocklen : ])
+		print("  GCM tag is correct :-)")
+	except ValueError:
+		print("  GCM tag is correct :-(")
 
 	# increment sequence number
 	seq_num_int = int.from_bytes(seq_num, 'big')
@@ -1074,13 +1080,6 @@ def decrypt_TLS_GCM_record(tls_record):
 		seq_num_cli = seq_num
 	else:
 		seq_num_srv = seq_num
-
-	# decrypt the ciphertext is good, but check the tag is even better
-	try:
-		tag = cipher.verify(aead_ciphertext[- cipher_algorithm_blocklen : ])
-		print("  GCM tag is correct :-)")
-	except ValueError:
-		print("  GCM tag is correct :-(")
 
 # Parse an Application record
 # Basically nothing to do, unless a keylogfile is used
