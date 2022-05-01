@@ -116,7 +116,7 @@ def get_mac_algo():
 	elif cipher_suite_name.find('SHA384') != -1:
 		mac_algorithm = "SHA384"
 	elif cipher_suite_name.find('SHA') != -1:
-		mac_algorithm = "SHA"
+		mac_algorithm = "SHA1"
 	else:
 		mac_algorithm = ""
 		print("%r is not supported, too bad" % cipher_suite_name)
@@ -163,7 +163,7 @@ def get_mac_algo_keylen():
 		mac_algorithm_keylen = 48
 	elif mac_algorithm == "SHA256":
 		mac_algorithm_keylen = 32
-	elif mac_algorithm == "SHA":
+	elif mac_algorithm == "SHA1":
 		mac_algorithm_keylen = 20
 
 ## set key_exchange_algorithm global state variable during ServerHello ##
@@ -372,9 +372,8 @@ def derivate_crypto_material():
 		seed = server_random + client_random
 		key_block = PRF(master_secret, b'key expansion', seed)
 
-		if selected_version == 0x0303 and (cipher_suites[selected_cipher_suite]).find('GCM') != -1:
-			seq_num_cli = b'\x00\x00\x00\x00\x00\x00\x00\x01'
-			seq_num_srv = b'\x00\x00\x00\x00\x00\x00\x00\x01'
+		seq_num_cli = b'\x00\x00\x00\x00\x00\x00\x00\x01'
+		seq_num_srv = b'\x00\x00\x00\x00\x00\x00\x00\x01'
 
 # TLS records analysis functions
 # These functions are sorted according to the record type value :
@@ -897,12 +896,17 @@ def decrypt_TLS1_0_record(tls_record):
 	global last_iv_cli
 	global last_iv_srv
 
+	global seq_num_cli
+	global seq_num_srv
+
 	if debug == True and encrypt_then_mac == True:
 		print("  TLSv1.0 decryption - encrypt_then_mac is used")
 
 	# get encryption_key and iv from key_material
 	if dissector_globals.is_from_client == True:
+		mac_key = key_block[:mac_algorithm_keylen]
 		enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
+		seq_num = seq_num_cli
 		# only 1st IV comes from key_material in TLSv1.0
 		if is_first_block_cli:
 			iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_blocklen]
@@ -910,7 +914,9 @@ def decrypt_TLS1_0_record(tls_record):
 		else:
 			iv = last_iv_cli
 	elif dissector_globals.is_from_client == False:
+		mac_key = key_block[mac_algorithm_keylen : 2 * mac_algorithm_keylen]
 		enc_key = key_block[2 * mac_algorithm_keylen + cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen]
+		seq_num = seq_num_srv
 		if is_first_block_srv:
 			iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_blocklen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_blocklen]
 			is_first_block_srv = False
@@ -918,7 +924,8 @@ def decrypt_TLS1_0_record(tls_record):
 			iv = last_iv_srv
 
 	if debug == True:
-		print("iv : %r len(iv) %r" % (iv, len(iv)))
+		print("  iv : %r len(iv) %r" % (iv, len(iv)))
+		print("  seq_num : %r " % seq_num)
 
 	cipher = AES.new(enc_key, AES.MODE_CBC, iv)
 
@@ -936,8 +943,19 @@ def decrypt_TLS1_0_record(tls_record):
 
 			if debug == True:
 				print("  Mac : %r" % real_mac)
-				print("  Decrypted data : %r" % decrypted_record)
+				print("  Decrypted and padded data : %r" % decrypted_record)
 			print("  Decrypted data: %r" % plaintext)
+
+			# also with have to check the mac
+			macced_data =  seq_num + b'\x17' + selected_version.to_bytes(2, 'big') + (len(plaintext)).to_bytes(2, 'big') + plaintext
+			h = hmac.new(mac_key, digestmod = mac_algorithm)
+			h.update(macced_data)
+			computed_hmac = h.digest()
+
+			if computed_hmac == real_mac:
+				print("  GCM tag is correct :-)")
+			else:
+				print("  GCM tag is not correct :-(")
 
 		except ValueError:
 			print("  Decryption error !")
@@ -963,6 +981,18 @@ def decrypt_TLS1_0_record(tls_record):
 				print("  decrypted_record : %r" % decrypted_record)
 			print("  Decrypted data : %r" % plaintext)
 
+
+			#also with have to check the mac
+			macced_data =  seq_num + b'\x17' + selected_version.to_bytes(2, 'big') + (len(encrypted_record)).to_bytes(2, 'big') + encrypted_record
+			h = hmac.new(mac_key, digestmod = mac_algorithm)
+			h.update(macced_data)
+			computed_hmac = h.digest()
+
+			if computed_hmac == real_mac:
+				print("  GCM tag is correct :-)")
+			else:
+				print("  GCM tag is not correct :-(")
+
 		except ValueError as e:
 			print("  Decryption error ! (%r)" % e)
 		# in TLSv1.0 end of ciphertext will be IV for next record
@@ -971,7 +1001,16 @@ def decrypt_TLS1_0_record(tls_record):
 		else:
 			last_iv_srv = encrypted_record[-16:]
 
-# Decrypt a TLSv1.0 application record
+	# increment sequence number
+	seq_num_int = int.from_bytes(seq_num, 'big')
+	seq_num_int += 1
+	seq_num = seq_num_int.to_bytes(8, 'big')
+	if dissector_globals.is_from_client:
+		seq_num_cli = seq_num
+	else:
+		seq_num_srv = seq_num
+
+# Decrypt a TLSv1.1 application record
 # The record can be macced & encrypted (default) or encrypted & macced
 def decrypt_TLS1_1_record(tls_record):
 
