@@ -1070,7 +1070,7 @@ def decrypt_TLS_GCM_record(tls_record):
 		tag = cipher.verify(aead_ciphertext[- cipher_algorithm_blocklen : ])
 		print("  GCM tag is correct :-)")
 	except ValueError:
-		print("  GCM tag is correct :-(")
+		print("  GCM tag is not correct :-(")
 
 	# increment sequence number
 	seq_num_int = int.from_bytes(seq_num, 'big')
