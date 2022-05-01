@@ -5,325 +5,18 @@ import argparse
 import base64
 import binascii
 
+from dissector_const import *
+from dissector_globals import *
+from dissector_utils import *
+
 from Cryptodome.Hash import HMAC as hmac, MD5, SHA1, SHA256, SHA384
 from Cryptodome.Cipher import AES
 from Cryptodome.Util.Padding import unpad
 
 from scapy.all import *
 
-# several enums & their getters:
-# - tls versions
-# - records types
-# - handshake messages types
-# - cipher suites
-# - handshake messages extensions
-
-## tls version ##
-tls_versions = {
-	0x0301: "TLSv1.0",
-	0x0302: "TLSv1.1",
-	0x0303: "TLSv1.2",
-	0x0304: "TLSv1.3"
-}
-
-def get_tls_version(tls_version):
-	try:
-		return tls_versions[tls_version]
-	except:
-		print("tls_version %r is unknown" % hex(tls_version))
-
-## content types ##
-content_types = {
-	20: "ChangeCipherSpec",
-	21: "Alert",
-	22: "Handshake",
-	23: "Application Data"
-}
-
-def get_content_type(content_type):
-	try:
-		return content_types[content_type]
-	except:
-		print("content_type %r is unknown" % hex(content_type))
-
-## handshake messages ##
-handshake_types = {
-	0: "HelloRequest",
-	1: "ClientHello",
-	2: "ServerHello",
-	4: "NewSessionTicket",
-	5: "EndOfEarlyData",
-	8: "EncryptedExtension",
-	11: "Certificate",
-	12: "ServerKeyExchange",
-	13: "CertificateRequest",
-	14: "ServerHelloDone",
-	15: "CertificateVerify",
-	16: "ClientKeyExchange",
-	20: "Finished",
-	24: "KeyUpdate",
-	254: "MessageHash"
-}
-
-def get_handshake_type(handshake_type):
-	try:
-		return handshake_types[handshake_type]
-	except:
-		print("handshake_type %r is unknown" % hex(handshake_type))
-
-## cipher suites ##
-cipher_suites = {
-	0x0000: "TLS_NULL_WITH_NULL_NULL",
-
-	# RSA-based cipher suites.
-	#
-	# Require an RSA certificate.
-	# PremasterSecret is encrypted with the server public key.
-	0x0001: "TLS_RSA_WITH_NULL_MD5",
-	0x0002: "TLS_RSA_WITH_NULL_SHA",
-	0x0004: "TLS_RSA_WITH_RC4_128_MD5",
-	0x0005: "TLS_RSA_WITH_RC4_128_SHA",
-	0x0006: "TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5",
-	0x0007: "TLS_RSA_WITH_IDEA_CBC_SHA",
-	0x0008: "TLS_RSA_EXPORT_WITH_DES40_CBC_SHA",
-	0x0009: "TLS_RSA_WITH_DES_CBC_SHA",
-	0x000A: "TLS_RSA_WITH_3DES_EDE_CBC_SHA",
-	0x002F: "TLS_RSA_WITH_AES_128_CBC_SHA",
-	0x0035: "TLS_RSA_WITH_AES_256_CBC_SHA",
-	0x003B: "TLS_RSA_WITH_NULL_SHA256",
-	0x003C: "TLS_RSA_WITH_AES_128_CBC_SHA256",
-	0x003D: "TLS_RSA_WITH_AES_256_CBC_SHA256",
-
-	# Diffie-Hellman based cipher suites.
-	#
-	# Require a certificate embedding the
-	# server Diffie-Hellman parameters signed by the CA.
-	0x000B: "TLS_DH_DSS_EXPORT_WITH_DES40_CBC_SHA",
-	0x000C: "TLS_DH_DSS_WITH_DES_CBC_SHA",
-	0x000D: "TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA",
-	0x000E: "TLS_DH_RSA_EXPORT_WITH_DES40_CBC_SHA",
-	0x000F: "TLS_DH_RSA_WITH_DES_CBC_SHA",
-	0x0010: "TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA",
-	0x0030: "TLS_DH_DSS_WITH_AES_128_CBC_SHA",
-	0x0031: "TLS_DH_RSA_WITH_AES_128_CBC_SHA",
-
-	# Ephemeral Diffie-Hellman cipher suites.
-	#
-	# Ephemeral Diffie-Hellman server parameter
-	# will be sent during ServerKeyExchange,
-	# signed by the server certificate.
-	0x0011: "TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA",
-	0x0012: "TLS_DHE_DSS_WITH_DES_CBC_SHA",
-	0x0013: "TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA",
-	0x0016: "TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA",
-	0x0032: "TLS_DHE_DSS_WITH_AES_128_CBC_SHA",
-	0x0033: "TLS_DHE_RSA_WITH_AES_128_CBC_SHA",
-	0x0036: "TLS_DH_DSS_WITH_AES_256_CBC_SHA",
-	0x0037: "TLS_DH_RSA_WITH_AES_256_CBC_SHA",
-	0x0038: "TLS_DHE_DSS_WITH_AES_256_CBC_SHA",
-	0x0039: "TLS_DHE_RSA_WITH_AES_256_CBC_SHA",
-	0x003E: "TLS_DH_DSS_WITH_AES_128_CBC_SHA256",
-	0x003F: "TLS_DH_RSA_WITH_AES_128_CBC_SHA256",
-	0x0040: "TLS_DHE_DSS_WITH_AES_128_CBC_SHA256",
-	0x0067: "TLS_DHE_RSA_WITH_AES_128_CBC_SHA256",
-	0x0068: "TLS_DH_DSS_WITH_AES_256_CBC_SHA256",
-	0x0069: "TLS_DH_RSA_WITH_AES_256_CBC_SHA256",
-	0x006A: "TLS_DHE_DSS_WITH_AES_256_CBC_SHA256",
-	0x006B: "TLS_DHE_RSA_WITH_AES_256_CBC_SHA256",
-
-	# Anonymous Diffie-Hellman cipher suites.
-	#
-	# DH parameters are sent unsigned...
-	0x0017: "TLS_DH_anon_EXPORT_WITH_RC4_40_MD5",
-	0x0018: "TLS_DH_anon_WITH_RC4_128_MD5",
-	0x001B: "TLS_DH_anon_WITH_3DES_EDE_CBC_SHA",
-	0x0034: "TLS_DH_anon_WITH_AES_128_CBC_SHA",
-	0x003A: "TLS_DH_anon_WITH_AES_256_CBC_SHA",
-	0x006C: "TLS_DH_anon_WITH_AES_128_CBC_SHA256",
-	0x006D: "TLS_DH_anon_WITH_AES_256_CBC_SHA256",
-	
-	# TLSv1.3 cipher suites.
-	0x1301: "TLS_AES_128_GCM_SHA256",
-	0x1302: "TLS_AES_256_GCM_SHA384",
-	0x1303: "TLS_CHACHA20_POLY1305_SHA256",
-	0x1304: "TLS_AES_128_CCM_SHA256",
-	0x1305: "TLS_AES_128_CCM_8_SHA256",
-	
-	# ChaCha20-Poly1305 cipher suites - RFC 7905
-	0xCCA8: "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
-	0xCCA9: "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
-	0xCCAA: "TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
-	0xCCAB: "TLS_PSK_WITH_CHACHA20_POLY1305_SHA256",
-	0xCCAC: "TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256",
-	0xCCAD: "TLS_DHE_PSK_WITH_CHACHA20_POLY1305_SHA256",
-	0xCCAE: "TLS_RSA_PSK_WITH_CHACHA20_POLY1305_SHA256",
-
-   # TLS Renegotiation indication cipher suite - RFC 5746
-    0x00FF: "TLS_EMPTY_RENEGOTIATION_INFO_SCSV",
-
-   # TLS Fallback Signaling cipher suite - RFC 7507
-	0x5600: "TLS_FALLBACK_SCSV",
-   
-   # TLS ECC-based cipher suites - RFC 4492 & 8422
-	0xC001: "TLS_ECDH_ECDSA_WITH_NULL_SHA",
-	0xC002: "TLS_ECDH_ECDSA_WITH_RC4_128_SHA",
-	0xC003: "TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA",
-	0xC004: "TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA",
-	0xC005: "TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA",
-	0xC006: "TLS_ECDHE_ECDSA_WITH_NULL_SHA",
-	0xC007: "TLS_ECDHE_ECDSA_WITH_RC4_128_SHA",
-	0xC008: "TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA",
-	0xC009: "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
-	0xC00A: "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA",
-	0xC008: "TLS_ECDH_RSA_WITH_NULL_SHA",
-	0xC00C: "TLS_ECDH_RSA_WITH_RC4_128_SHA",
-	0xC00D: "TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA",
-	0xC00E: "TLS_ECDH_RSA_WITH_AES_128_CBC_SHA",
-	0xC00F: "TLS_ECDH_RSA_WITH_AES_256_CBC_SHA",
-	0xC010: "TLS_ECDHE_RSA_WITH_NULL_SHA",
-	0xC011: "TLS_ECDHE_RSA_WITH_RC4_128_SHA",
-	0xC012: "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA",
-	0xC013: "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
-	0xC014: "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
-	0xC015: "TLS_ECDH_anon_WITH_NULL_SHA",
-	0xC016: "TLS_ECDH_anon_WITH_RC4_128_SHA",
-	0xC017: "TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA",
-	0xC018: "TLS_ECDH_anon_WITH_AES_128_CBC_SHA",
-	0xC019: "TLS_ECDH_anon_WITH_AES_256_CBC_SHA",
-	0xC02B: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
-	0xC02C: "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
-	0xC02F: "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
-	0xC030: "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
-	
-	# TLS AES-GCM cipher suites - RFC 5288
-	0x009C: "TLS_RSA_WITH_AES_128_GCM_SHA256",
-	0x009D: "TLS_RSA_WITH_AES_256_GCM_SHA384",
-	0x009E: "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256",
-	0x009F: "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384",
-	0x00A0: "TLS_DH_RSA_WITH_AES_128_GCM_SHA256",
-	0x00A1: "TLS_DH_RSA_WITH_AES_256_GCM_SHA384",
-	0x00A2: "TLS_DHE_DSS_WITH_AES_128_GCM_SHA256",
-	0x00A3: "TLS_DHE_DSS_WITH_AES_256_GCM_SHA384",
-	0x00A4: "TLS_DH_DSS_WITH_AES_128_GCM_SHA256",
-	0x00A5: "TLS_DH_DSS_WITH_AES_256_GCM_SHA384",
-	0x00A6: "TLS_DH_anon_WITH_AES_128_GCM_SHA256",
-	0x00A7: "TLS_DH_anon_WITH_AES_256_GCM_SHA384",
-
-	# TLS CAMELLIA cipher suites - RFC 5932
-	0x0041: "TLS_RSA_WITH_CAMELLIA_128_CBC_SHA",
-	0x0042: "TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA",
-	0x0043: "TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA",
-	0x0044: "TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA",
-	0x0045: "TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA",
-	0x0046: "TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA",
-	0x0084: "TLS_RSA_WITH_CAMELLIA_256_CBC_SHA",
-	0x0085: "TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA",
-	0x0086: "TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA",
-	0x0087: "TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA",
-	0x0088: "TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA",
-	0x0089: "TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA",
-	0x00BA: "TLS_RSA_WITH_CAMELLIA_128_CBC_SHA256",
-	0x00BB: "TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA256",
-	0x00BC: "TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA256",
-	0x00BD: "TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA256",
-	0x00BE: "TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA256",
-	0x00BF: "TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA256",
-	0x00C0: "TLS_RSA_WITH_CAMELLIA_256_CBC_SHA256",
-	0x00C1: "TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA256",
-	0x00C2: "TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA256",
-	0x00C3: "TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA256",
-	0x00C4: "TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA256",
-	0x00C5: "TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA256",
-
-	# TLS SEED cipher suites - RFC 4162
-	0x0096: "TLS_RSA_WITH_SEED_CBC_SHA",
-	0x0097: "TLS_DH_DSS_WITH_SEED_CBC_SHA",
-	0x0098: "TLS_DH_RSA_WITH_SEED_CBC_SHA",
-	0x0099: "TLS_DHE_DSS_WITH_SEED_CBC_SHA",
-	0x009A: "TLS_DHE_RSA_WITH_SEED_CBC_SHA",
-	0x009B: "TLS_DH_anon_WITH_SEED_CBC_SHA",
-
-	# TLS AES-GCM cipher suites with SHA-256/384 - RFC 5289
-	0xC023: "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256",
-	0xC024: "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384",
-	0xC025: "TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA256",
-	0xC026: "TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384",
-	0xC027: "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
-	0xC028: "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384",
-	0xC029: "TLS_ECDH_RSA_WITH_AES_128_CBC_SHA256",
-	0xC02A: "TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384",
-	0xC02B: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
-	0xC02C: "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
-	0xC02D: "TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256",
-	0xC02E: "TLS_ECDH_ECDSA_WITH_AES_256_GCM_SHA384",
-	0xC02F: "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
-	0xC030: "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
-	0xC031: "TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256",
-	0xC032: "TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384"
-}
-
-def is_a_tls13_ciphersuite(cipher_suite):
-	if cipher_suite > 0x1300 and cipher_suite < 0x1306:
-		return True
-	return False
-
-def get_cipher_suites(cipher_suites_array):
-	for cipher_suite in cipher_suites_array:
-		try:
-		    print("  - " + cipher_suites[cipher_suite])
-		except:
-		    print("cipher_suite %r is unknown" % hex(cipher_suite))
-
-## compression ##
-def get_compression_suites(compression_suites_array):
-	print("  - %r" % compression_suites_array)
-
-## extensions ##
-extension_types = {
-	0: "server_name",
-	1: "max_fragment_length",
-	5: "status_request",
-	10: "supported_groups",
-	11: "ec_point_formats",
-	13: "signature_algorithms",
-	14: "use_srtp",
-	15: "heartbeat",
-	16: "application_layer_protocol_negotiation",
-	18: "signed_certificate_timestamp",
-	19: "client_certificate_type",
-	20: "server_certificate_type",
-	21: "padding",
-	22: "encrypted_then_mac",
-	23: "extended_master_secret",
-	35: "session_ticket",
-	41: "pre_shared_key",
-	42: "early_data",
-	43: "supported_versions",
-	44: "cookie",
-	45: "psk_key_exchange_modes",
-	47: "certificate_authorities",
-	48: "oid_filters",
-	49: "post_handshake_auth",
-	50: "signature_algorithms_cert",
-	51: "key_share",
-	65281: "renegotiation_info"
-}
-
-def get_extension_type(extension_type):
-	try:
-		return extension_types[extension_type]
-	except:
-		print("extension %r is unknown" % hex(extension_type))
-
 # Some global variables to handle SSL/TLS state-machine
 #
-
-## is debug activated ? ##
-debug = False
-
-## client & server addresses ##
-addr_client = ""
-addr_server = ""
 
 ## global variable set to True when a ClientHello is seen ##
 ## and set to False when handshake is finished            ##
@@ -357,9 +50,6 @@ cipher_algorithm_saltlen = 0
 ## what is the macAlgorithm key length ? ##
 mac_algorithm_keylen = 0
 
-## does this packet come from client ? ##
-is_from_client = False
-
 ## what is the TLS version selected by the server ? ##
 selected_version = None
 
@@ -382,7 +72,7 @@ last_iv_cli = None
 last_iv_srv = None
 
 ## Have client&server chosen to encrypt then mac ? ##
-## (by default TLS uses mac then encrypt          )##
+## (by default TLS uses mac then encrypt)          ##
 encrypt_then_mac = False
 
 ## set cipher_algorithm global state variable during ServerHello ##
@@ -608,6 +298,7 @@ def PRF(secret, label, seed):
 	if debug == True:
 		print("PRF(%r, %r, %r)" % (secret, label, seed) )
 
+	# TLSv1.0 & TLSv1.1 use a MD5+SHA1 based PRF
 	if selected_version < 0x0303:
 		l = len(secret)
 
@@ -617,6 +308,9 @@ def PRF(secret, label, seed):
 		p_sha1 = P_SHA1(S2, label + seed, 16)
 
 		return xor(p_md5, p_sha1)
+	# by default TLSv1.2 uses P_SHA256
+	# another hash algorithm is used if explicitly
+	# told by the chosen ciphersuite
 	else:
 		if mac_algorithm == 'SHA384':
 			return P_SHA384(secret, label + seed, 20)
@@ -672,66 +366,6 @@ def derivate_crypto_material():
 		seed = server_random + client_random
 		key_block = PRF(master_secret, b'key expansion', seed)
 
-# Some general purpose functions to :
-# - Check if the TLS packet is client->server, server->client or Out Of Blue
-# - Get the header of a TLS packet
-
-# Parse the header of a TLS record
-# This header shall contain:
-# - 1 byte indicating the content type
-# - 2 bytes indicating the record version
-# - 2 bytes indicating the record length
-#
-def tls_packet_get_header(tls_packet, offset):
-	packet_version = int.from_bytes(tls_packet[offset : offset + 2], 'big')
-	packet_len = int.from_bytes(tls_packet[offset + 2 : offset + 4], 'big')
-	return (packet_version, packet_len)
-
-def get_packet_direction():
-	if is_from_client:
-		print(" tclient -> server")
-	else:
-		print(" server -> client")
-
-# Check IP/TCP layer:
-# - IP4/IPv6 layer is mandatory
-# - TCP layer is mandatory
-# - Packet shall either be from client to server or from server to client
-#
-def check_tcpip_layer(packet, index):
-
-	global is_from_client
-
-	# decide if the packet is from client or from server
-	if packet.haslayer(IP):
-		if packet[IP].src == addr_client and packet[IP].dst == addr_server:
-			#print("client -> server")
-			is_from_client = True
-		elif packet[IP].dst == addr_client and packet[IP].src == addr_server:
-			#print("server -> client")
-			is_from_client = False
-		else:
-			print("Error: packet %r doesn't belong to the TLS stream" % index)
-			exit(0)
-	elif packet.haslayer(IPv6):
-		if packet[IPv6].src == addr_client and packet[IPv6].dst == addr_server:
-			#print("client -> server")
-			is_from_client = True
-		elif packet[IPv6].dst == addr_client and packet[IPv6].src == addr_server:
-			#print("server -> client")
-			is_from_client = False
-		else:
-			print("Error: packet %r doesn't belong to the TLS stream" % index)
-			exit(0)
-	else:
-		print("Error: packet %r doesn't have any IP layer" % index)
-		exit(0)
-
-	# we shall have a TCP layer !
-	if not packet.haslayer(TCP):
-		print("Error: packet %r doesn't have any TCP layer" % index)
-		exit(0)
-
 # TLS records analysis functions
 # These functions are sorted according to the record type value :
 # - CCS (0x14)
@@ -748,7 +382,7 @@ def dissect_ccs_record(tls_record):
 
 	print("  ChangeCipherSpec record")
 
-	if is_from_client == True:
+	if dissector_globals.is_from_client == True:
 		client_finished_handshake = True
 		print("Client has finished the handshake !")
 	else:
@@ -766,16 +400,6 @@ def dissect_alert_record(tls_record):
 
 # Handshake processing functions
 
-# Parse the header of an handshake message
-# This header shall contain:
-# - 1 byte indicating the message type
-# - 3 bytes indicating the message length
-#
-def handshake_record_get_header(handshake_record, offset):
-	record_type = int.from_bytes(handshake_record[offset : offset + 1], 'big')
-	record_len = int.from_bytes(handshake_record[offset + 1 : offset + 4], 'big')
-	return (record_type, record_len)
-
 # Set the selected_version global variable
 #
 def dissect_extension_supported_version(extension_content):
@@ -783,13 +407,13 @@ def dissect_extension_supported_version(extension_content):
 	global selected_version
 
     # ClientHello - we can have several supported versions
-	if is_from_client == True:
+	if dissector_globals.is_from_client == True:
 		supported_versions_number = extension_content[0] >> 1
 
 		for i in range(supported_versions_number):
 			supported_version = int.from_bytes(extension_content[1 + 2*i : 1 + 2*i + 2], 'big')
 
-			print("\t\t - supported version n°%r : %r (%r)" % (i, hex(supported_version), get_tls_version(supported_version)))
+			print("  - supported version n°%r : %r (%r)" % (i, hex(supported_version), get_tls_version(supported_version)))
 
     # ServerHello - we shall have only one supported version
 	else:
@@ -797,14 +421,14 @@ def dissect_extension_supported_version(extension_content):
 
 		# The server supported version shall be on two bytes
 		if len(extension_content) != 2:
-		    print("\t\t - ? supported version returned by the server is weird (len = %r)" % supported_version_len)
+		    print("  - ? supported version returned by the server is weird (len = %r)" % supported_version_len)
 
 		# if TLSv1.3, the content content of this extension in ServerHello
 		# Overrides the version number set in the ServerHello message
 		supported_version = int.from_bytes(extension_content[0:2], 'big')
 		selected_version = supported_version
 
-		print("\t\t - Server supported version : %r (%r)" % (hex(supported_version), get_tls_version(supported_version)))
+		print("  - Server supported version : %r (%r)" % (hex(supported_version), get_tls_version(supported_version)))
 
 # Parse an extensions set
 #
@@ -841,7 +465,7 @@ def parse_extension(hello_message, offset):
 		if extension_type == 43:
 		    dissect_extension_supported_version(extension_content)
 		# encrypt_then_mac extension
-		elif extension_type == 22 and is_from_client == False:
+		elif extension_type == 22 and dissector_globals.is_from_client == False:
 		    global encrypt_then_mac
 		    encrypt_then_mac = True
 		    print("  => Server wants to use encrypt_then_mac !")
@@ -984,10 +608,13 @@ def dissect_server_hello(hello_message):
 	else:
 		print("  ServerHello - no SessionID")
 	
-	print("  ServerHello - Selected CipherSuite : %r" % cipher_suites[selected_cipher_suite])
+	print("  ServerHello - Selected CipherSuite : %s" % cipher_suites[selected_cipher_suite])
 
 	if is_a_tls13_ciphersuite(selected_cipher_suite) == False:
 		print("  ServerHello - KeyExchangeAlgorithm : %r" % key_exchange_algorithm)
+	else:
+		print("  A TLSv1.3 CipherSuite has been selected, analysis cannot continue with this tool...")
+		exit(0)
 
 	print("  ServerHello : %r CompressionSuites :" % compression_suite_number)
 	get_compression_suites(compression_suites)
@@ -996,7 +623,11 @@ def dissect_server_hello(hello_message):
 	# was chosen using this extension
 	offset = parse_extension(hello_message, offset)
 
-	print("  ServerHello - Server selected %r" % get_tls_version(selected_version))
+	print("  ServerHello - Server selected %s" % get_tls_version(selected_version))
+
+	if selected_version == 0x0304:
+		print("  TLSv1.3 has been selected, analysis cannot continue with this tool...")
+		exit(0)
 
 	return offset
 
@@ -1108,11 +739,11 @@ def dissect_finished(hello_message):
 	# in TLSv1.0 the IV comes from key_material for the 1st record and then the end of the previous record
 	# if message comes from server we need to remember the end of Finished message as the next IV.
 	if encrypt_then_mac == False:
-		if is_from_client == False:
+		if dissector_globals.is_from_client == False:
 			last_iv_srv = hello_message[-cipher_algorithm_blocklen:]
 			is_first_block_srv = False
 	else:
-		if is_from_client == False:
+		if dissector_globals.is_from_client == False:
 			encrypted_record = hello_message[: -mac_algorithm_keylen]
 			last_iv_srv = encrypted_record[-16:]
 			is_first_block_srv = False
@@ -1154,7 +785,7 @@ def dissect_handshake_record(handshake_record):
 
 		# If message_type is unknown, message is probably an encrypted Finished 
 		if message_type not in handshake_types:
-			if (is_from_client and client_finished_handshake) or server_finished_handshake:
+			if (dissector_globals.is_from_client and client_finished_handshake) or server_finished_handshake:
 			    print("  Handshake Type unknown, probably a Finished message")
 			    message_len = record_len
 			    message_type = 20
@@ -1213,6 +844,7 @@ def dissect_handshake_record(handshake_record):
 		elif message_type == 20:
 			dissect_finished(handshake_message)
 			offset += (record_len - 4)
+			handshake_has_started = False
 		# case 24 - KeyUpdate
 		elif message_type == 24:
 			dissect_key_update(handshake_message)
@@ -1259,7 +891,7 @@ def decrypt_TLS1_0_record(tls_record):
 		print("  TLSv1.0 decryption - encrypt_then_mac is used")
 
 	# get encryption_key and iv from key_material
-	if is_from_client == True:
+	if dissector_globals.is_from_client == True:
 		enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
 		# only 1st IV comes from key_material in TLSv1.0
 		if is_first_block_cli:
@@ -1267,7 +899,7 @@ def decrypt_TLS1_0_record(tls_record):
 			is_first_block_cli = False
 		else:
 			iv = last_iv_cli
-	elif is_from_client == False:
+	elif dissector_globals.is_from_client == False:
 		enc_key = key_block[2 * mac_algorithm_keylen + cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen]
 		if is_first_block_srv:
 			iv = key_block[2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + cipher_algorithm_blocklen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_blocklen]
@@ -1294,14 +926,14 @@ def decrypt_TLS1_0_record(tls_record):
 
 			if debug == True:
 				print("  Mac : %r" % real_mac)
-				print("  Decrypted data : %r" % decypted_record)
+				print("  Decrypted data : %r" % decrypted_record)
 			print("  Decrypted data: %r" % plaintext)
 
 		except ValueError:
 			print("  Decryption error !")
 
 		# in TLSv1.0 end of ciphertext will be IV for next record
-		if is_from_client == True:
+		if dissector_globals.is_from_client == True:
 			last_iv_cli = tls_record[-16:]
 		else:
 			last_iv_srv = tls_record[-16:]
@@ -1324,7 +956,7 @@ def decrypt_TLS1_0_record(tls_record):
 		except ValueError as e:
 			print("  Decryption error ! (%r)" % e)
 		# in TLSv1.0 end of ciphertext will be IV for next record
-		if is_from_client == True:
+		if dissector_globals.is_from_client == True:
 			last_iv_cli = encrypted_record[-16:]
 		else:
 			last_iv_srv = encrypted_record[-16:]
@@ -1334,9 +966,9 @@ def decrypt_TLS1_0_record(tls_record):
 def decrypt_TLS1_1_record(tls_record):
 
 	# get encryption_key from key_material
-	if is_from_client == True:
+	if dissector_globals.is_from_client == True:
 		enc_key = key_block[2 * mac_algorithm_keylen : 2 * mac_algorithm_keylen + cipher_algorithm_keylen]
-	elif is_from_client == False:
+	elif dissector_globals.is_from_client == False:
 		enc_key = key_block[2 * mac_algorithm_keylen + cipher_algorithm_keylen : 2 * mac_algorithm_keylen + 2 * cipher_algorithm_keylen]
 
 	iv = tls_record[:cipher_algorithm_blocklen]
@@ -1388,10 +1020,10 @@ def decrypt_TLS1_1_record(tls_record):
 def decrypt_TLS_GCM_record(tls_record):
 
 	# get encryption_key and salt from key_material
-	if is_from_client == True:
+	if dissector_globals.is_from_client == True:
 		enc_key = key_block[ : cipher_algorithm_keylen]
 		salt = key_block[2 * cipher_algorithm_keylen : 2 * cipher_algorithm_keylen + cipher_algorithm_saltlen]
-	elif is_from_client == False:
+	elif dissector_globals.is_from_client == False:
 		enc_key = key_block[cipher_algorithm_keylen : 2 * cipher_algorithm_keylen]
 		salt = key_block[2 * cipher_algorithm_keylen + cipher_algorithm_saltlen : 2 * cipher_algorithm_keylen + 2 * cipher_algorithm_saltlen]
 
@@ -1596,22 +1228,18 @@ def main():
 		exit(0)
 
 	# get the client & server IP addresses
-	global addr_client
-	global addr_server
-	global is_from_client
-
 	if pcap[0].haslayer(IP): 
-		addr_client = pcap[0][IP].src
-		addr_server = pcap[0][IP].dst
+		dissector_globals.addr_client = pcap[0][IP].src
+		dissector_globals.addr_server = pcap[0][IP].dst
 	elif pcap[0].haslayer(IPv6):
-		addr_client = pcap[0][IPv6].src
-		addr_server = pcap[0][IPv6].dst	
+		dissector_globals.addr_client = pcap[0][IPv6].src
+		dissector_globals.addr_server = pcap[0][IPv6].dst	
 	else:
 		print("Error: first packet doesn't have any IP layer")
 		exit(0)
 
 	# by assumption, first packet is from client to server
-	is_from_client = True
+	dissector_globals.is_from_client = True
 
 	# there is no key exchange algorithm at the very begining
 	key_exchange_algorithm = ""
