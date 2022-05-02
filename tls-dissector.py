@@ -75,7 +75,7 @@ last_iv_srv = None
 ## (by default TLS uses mac then encrypt)          ##
 encrypt_then_mac = False
 
-## sequence numbers for GCM mode ##
+## sequence numbers for MAC/GCM tag ##
 seq_num_cli = b''
 seq_num_srv = b''
 
