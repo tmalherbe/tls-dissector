@@ -1,0 +1,209 @@
+thomas@ankou:~/bordels/openssl$ rm /tmp/zozo ; LD_PRELOAD=build/lib/libcrypto.so.1.1;LD_PRELOAD=build/lib/libssl.so.1.1 ./build/bin/openssl s_client -tls1_3 -connect slate.fr:443 -keylogfile /tmp/zozo
+CONNECTED(00000004)
+
+fonction tls13_hkdf_expand
+secret : \x7E\xE8\x20\x6F\x55\x70\x02\x3E\x6D\xC7
+label : (7 bytes) derived
+data : (48 bytes) \x38\xB0\x60\xA7\x51\xAC\x96\x38\x4C\xD9\x32\x7E\xB1\xB1\xE3\x6A\x21\xFD\xB7\x11\x14\xBE\x07\x43\x4C\x0C\xC7\xBF\x63\xF6\xE1\xDA\x27\x4E\xDE\xBF\xE7\x6F\x65\xFB\xD5\x1A\xD2\xF1\x48\x98\xB9\x5B
+
+file ssl/tls13_enc.c function tls13_setup_key_block line 388
+function tls13_change_cipher_state, label : s hs traffic
+file ssl/tls13_enc.c function derive_secret_key_and_iv line 413
+label : (12 bytes) s hs traffic
+
+fonction tls13_hkdf_expand
+secret : \x37\x71\x6D\xDE\x26\xF3\xED\x5B\xC8\x81
+label : (12 bytes) s hs traffic
+data : (48 bytes) \x21\x5D\xF9\x9E\x3B\xF3\x98\xDA\x8A\x9C\x81\x14\xC5\x63\x55\x1E\x7D\x28\x5A\x86\x8C\xE6\x24\xA5\xE3\xA2\x05\xAF\x33\x2C\x80\x85\x4F\xF0\xB0\xB9\x78\x18\xCB\xB8\xB1\x0B\xFF\x66\x70\xDA\x5D\x3F
+
+file ssl/tls13_enc.c function tls13_derive_key line 161
+secret : \x24\x8D\xB6\x35\x31\xA8\x27\x7F\x13\x0B\x9A\xF0\xA6\xC9\x10\xBF\x83\x54\xE5\xD5\xDA\x8E\xBB\x60\x52\x6B\x2E\xA8\x18\xA1\xD3\xB8\xC7\xE1\x6E\x19\x3A\xB2\x7F\x34\x57\xA3\x9E\xEC\xBA\xF7\x41\xA5
+
+fonction tls13_hkdf_expand
+secret : \x24\x8D\xB6\x35\x31\xA8\x27\x7F\x13\x0B
+label : (3 bytes) key
+data : (32 bytes) empty hex buffer ! 
+
+
+fonction tls13_hkdf_expand
+secret : \x24\x8D\xB6\x35\x31\xA8\x27\x7F\x13\x0B
+label : (2 bytes) iv
+data : (12 bytes) empty hex buffer ! 
+
+function derive_secret_key_and_iv, derivation de la clef de session (32 octets) et de l'iv (12 octets)
+clef de session : (32 bytes) \xF5\x48\x7B\xF7\xCE\x14\x24\xE2\xB4\x90\x96\xFC\x01\x33\xF5\xA2\xEC\xFE\x84\x81\x43\x06\x4D\x2C\x15\xC2\x55\x09\x40\x5C\x91\x9B
+iv : (12 bytes) \x5B\xBA\x90\xBD\xDA\xD7\xE5\x96\x00\xD8\x71\x21
+
+fonction tls13_hkdf_expand
+secret : \x24\x8D\xB6\x35\x31\xA8\x27\x7F\x13\x0B
+label : (8 bytes) finished
+data : (48 bytes) empty hex buffer ! 
+
+depth=1 C = US, O = "Cloudflare, Inc.", CN = Cloudflare Inc ECC CA-3
+verify error:num=20:unable to get local issuer certificate
+verify return:1
+depth=0 C = US, ST = California, L = San Francisco, O = "Cloudflare, Inc.", CN = sni.cloudflaressl.com
+verify return:1
+
+fonction tls13_hkdf_expand
+secret : \x37\x71\x6D\xDE\x26\xF3\xED\x5B\xC8\x81
+label : (7 bytes) derived
+data : (48 bytes) \x38\xB0\x60\xA7\x51\xAC\x96\x38\x4C\xD9\x32\x7E\xB1\xB1\xE3\x6A\x21\xFD\xB7\x11\x14\xBE\x07\x43\x4C\x0C\xC7\xBF\x63\xF6\xE1\xDA\x27\x4E\xDE\xBF\xE7\x6F\x65\xFB\xD5\x1A\xD2\xF1\x48\x98\xB9\x5B
+
+function tls13_change_cipher_state, label : s ap traffic
+file ssl/tls13_enc.c function derive_secret_key_and_iv line 413
+label : (12 bytes) s ap traffic
+
+fonction tls13_hkdf_expand
+secret : \x75\x73\x4C\x23\x5E\x81\x13\xCA\x6A\xFF
+label : (12 bytes) s ap traffic
+data : (48 bytes) \x1F\x6D\xB8\xA5\x90\x4B\x70\x0C\x4F\xEB\xF1\x38\x3F\x81\x09\x26\xD2\x9B\x30\x03\x62\xFC\x7A\x82\x58\x81\x51\x83\xB9\xC0\xEF\x2A\x05\x28\xAC\x34\xC3\x46\x3A\xB5\x3F\xE1\x70\x37\xF9\xEE\x79\x41
+
+file ssl/tls13_enc.c function tls13_derive_key line 161
+secret : \x1E\x80\x44\x19\x40\x0F\xD9\x6F\xDC\x49\x5B\xE0\xC2\x5C\xBB\xA5\x00\x13\x77\x94\x15\xE6\xA2\x5C\xC1\xD2\x5F\x59\x06\xBC\x11\x28\xBB\x96\x92\x99\xC9\x20\x0E\xA0\x33\xC5\x77\x73\x24\x9D\x60\x58
+
+fonction tls13_hkdf_expand
+secret : \x1E\x80\x44\x19\x40\x0F\xD9\x6F\xDC\x49
+label : (3 bytes) key
+data : (32 bytes) empty hex buffer ! 
+
+
+fonction tls13_hkdf_expand
+secret : \x1E\x80\x44\x19\x40\x0F\xD9\x6F\xDC\x49
+label : (2 bytes) iv
+data : (12 bytes) empty hex buffer ! 
+
+function derive_secret_key_and_iv, derivation de la clef de session (32 octets) et de l'iv (12 octets)
+clef de session : (32 bytes) \x7C\xE8\x9A\xC4\x3D\xD3\xE7\x56\xA4\x9E\x84\xBF\x22\x51\x02\x62\x4F\x75\x43\x31\x85\xB0\xB2\xB1\xD4\xEB\x33\xD6\xD8\x21\xB3\x90
+iv : (12 bytes) \x21\x9F\xF8\x48\x93\xCC\x5D\xA3\x9D\x62\x12\x7E
+
+fonction tls13_hkdf_expand
+secret : \x75\x73\x4C\x23\x5E\x81\x13\xCA\x6A\xFF
+label : (10 bytes) exp master
+data : (48 bytes) \x1F\x6D\xB8\xA5\x90\x4B\x70\x0C\x4F\xEB\xF1\x38\x3F\x81\x09\x26\xD2\x9B\x30\x03\x62\xFC\x7A\x82\x58\x81\x51\x83\xB9\xC0\xEF\x2A\x05\x28\xAC\x34\xC3\x46\x3A\xB5\x3F\xE1\x70\x37\xF9\xEE\x79\x41
+
+function tls13_change_cipher_state, label : c hs traffic
+file ssl/tls13_enc.c function derive_secret_key_and_iv line 413
+label : (12 bytes) c hs traffic
+
+fonction tls13_hkdf_expand
+secret : \x37\x71\x6D\xDE\x26\xF3\xED\x5B\xC8\x81
+label : (12 bytes) c hs traffic
+data : (48 bytes) \x21\x5D\xF9\x9E\x3B\xF3\x98\xDA\x8A\x9C\x81\x14\xC5\x63\x55\x1E\x7D\x28\x5A\x86\x8C\xE6\x24\xA5\xE3\xA2\x05\xAF\x33\x2C\x80\x85\x4F\xF0\xB0\xB9\x78\x18\xCB\xB8\xB1\x0B\xFF\x66\x70\xDA\x5D\x3F
+
+file ssl/tls13_enc.c function tls13_derive_key line 161
+secret : \xAA\x5C\x26\x6B\x7B\x4C\x40\xA9\xE0\xE6\x9F\xEC\x26\x36\x88\x6E\x21\xD5\x43\x7D\x13\x26\x17\x14\x40\xC7\xA8\xD1\x8E\x44\x62\xD7\x4E\x9F\x64\x5F\xDA\x57\x43\x92\xAB\x7A\x6C\x8E\x28\x04\x82\xBE
+
+fonction tls13_hkdf_expand
+secret : \xAA\x5C\x26\x6B\x7B\x4C\x40\xA9\xE0\xE6
+label : (3 bytes) key
+data : (32 bytes) empty hex buffer ! 
+
+
+fonction tls13_hkdf_expand
+secret : \xAA\x5C\x26\x6B\x7B\x4C\x40\xA9\xE0\xE6
+label : (2 bytes) iv
+data : (12 bytes) empty hex buffer ! 
+
+function derive_secret_key_and_iv, derivation de la clef de session (32 octets) et de l'iv (12 octets)
+clef de session : (32 bytes) \x44\x2D\xD1\x02\x77\xD2\xD4\x16\x18\x62\x43\x37\x89\x6F\xC3\xAF\x7C\x6B\x15\x0A\x6D\xA2\xBD\xE9\xEE\xBB\x38\x62\xD3\x91\x8F\x12
+iv : (12 bytes) \x66\x91\x77\xF2\xFA\xEE\x15\x46\xB6\xDE\x37\xFE
+
+fonction tls13_hkdf_expand
+secret : \xAA\x5C\x26\x6B\x7B\x4C\x40\xA9\xE0\xE6
+label : (8 bytes) finished
+data : (48 bytes) empty hex buffer ! 
+
+
+fonction tls13_hkdf_expand
+secret : \x75\x73\x4C\x23\x5E\x81\x13\xCA\x6A\xFF
+label : (10 bytes) res master
+data : (48 bytes) \x26\x2E\x4B\x32\x02\x50\x79\x47\xF3\x64\xFD\xEE\x1A\xA6\xD6\x7C\xE0\x07\x08\x48\x7E\x46\xC5\x50\xA8\x84\x10\xC6\xF0\xF1\xC0\xA7\xE9\x84\xE4\xD0\x3D\x1C\xD9\x9B\x95\x13\x18\x27\x45\xD6\xF7\x4E
+
+function tls13_change_cipher_state, label : c ap traffic
+file ssl/tls13_enc.c function derive_secret_key_and_iv line 413
+label : (12 bytes) c ap traffic
+
+fonction tls13_hkdf_expand
+secret : \x75\x73\x4C\x23\x5E\x81\x13\xCA\x6A\xFF
+label : (12 bytes) c ap traffic
+data : (48 bytes) \x1F\x6D\xB8\xA5\x90\x4B\x70\x0C\x4F\xEB\xF1\x38\x3F\x81\x09\x26\xD2\x9B\x30\x03\x62\xFC\x7A\x82\x58\x81\x51\x83\xB9\xC0\xEF\x2A\x05\x28\xAC\x34\xC3\x46\x3A\xB5\x3F\xE1\x70\x37\xF9\xEE\x79\x41
+
+file ssl/tls13_enc.c function tls13_derive_key line 161
+secret : \xFE\x9A\xF7\x72\x76\xF7\x96\x19\x37\x14\x2C\x9B\x47\xE2\xAA\x99\x8C\x79\x53\x9F\x50\xF3\x4B\x50\x47\xC9\x98\x87\x62\xDB\x82\x4E\x27\x82\x96\xD0\x17\xFE\x19\xA4\x22\x4E\x66\xD9\xDF\xD1\xC1\xBA
+
+fonction tls13_hkdf_expand
+secret : \xFE\x9A\xF7\x72\x76\xF7\x96\x19\x37\x14
+label : (3 bytes) key
+data : (32 bytes) empty hex buffer ! 
+
+
+fonction tls13_hkdf_expand
+secret : \xFE\x9A\xF7\x72\x76\xF7\x96\x19\x37\x14
+label : (2 bytes) iv
+data : (12 bytes) empty hex buffer ! 
+
+function derive_secret_key_and_iv, derivation de la clef de session (32 octets) et de l'iv (12 octets)
+clef de session : (32 bytes) \x1B\x41\x45\x5F\xCC\x80\x7C\x5A\x4D\x9F\xA3\x98\x17\x66\xEB\xF5\xF1\x1C\x31\x9A\x56\xA8\x44\xC3\x94\xDC\x00\xB8\x51\xC7\xB7\x2A
+iv : (12 bytes) \xB1\x16\xCB\x11\x03\x82\xD6\x0C\x5F\x23\x93\x98
+---
+Certificate chain
+ 0 s:C = US, ST = California, L = San Francisco, O = "Cloudflare, Inc.", CN = sni.cloudflaressl.com
+   i:C = US, O = "Cloudflare, Inc.", CN = Cloudflare Inc ECC CA-3
+ 1 s:C = US, O = "Cloudflare, Inc.", CN = Cloudflare Inc ECC CA-3
+   i:C = IE, O = Baltimore, OU = CyberTrust, CN = Baltimore CyberTrust Root
+---
+Server certificate
+-----BEGIN CERTIFICATE-----
+MIIFLzCCBNSgAwIBAgIQA/RLrAfJhuxEUVHv6WIpuzAKBggqhkjOPQQDAjBKMQsw
+CQYDVQQGEwJVUzEZMBcGA1UEChMQQ2xvdWRmbGFyZSwgSW5jLjEgMB4GA1UEAxMX
+Q2xvdWRmbGFyZSBJbmMgRUNDIENBLTMwHhcNMjEwNzE2MDAwMDAwWhcNMjIwNzE1
+MjM1OTU5WjB1MQswCQYDVQQGEwJVUzETMBEGA1UECBMKQ2FsaWZvcm5pYTEWMBQG
+A1UEBxMNU2FuIEZyYW5jaXNjbzEZMBcGA1UEChMQQ2xvdWRmbGFyZSwgSW5jLjEe
+MBwGA1UEAxMVc25pLmNsb3VkZmxhcmVzc2wuY29tMFkwEwYHKoZIzj0CAQYIKoZI
+zj0DAQcDQgAERdUilR0uZcBzyJXJe9zJ0s1P9BWSv/f3FUVbwKL4kDe4znFoRfvO
+O3aJcYZCkhDojOPkzA/i+gvNhEgajTgOdqOCA28wggNrMB8GA1UdIwQYMBaAFKXO
+N+rrsHUOlGeItEX62SQQh5YfMB0GA1UdDgQWBBSnTNKlhoC2jepILjbyhnOpM7ng
+HzA2BgNVHREELzAtghVzbmkuY2xvdWRmbGFyZXNzbC5jb22CCiouc2xhdGUuZnKC
+CHNsYXRlLmZyMA4GA1UdDwEB/wQEAwIHgDAdBgNVHSUEFjAUBggrBgEFBQcDAQYI
+KwYBBQUHAwIwewYDVR0fBHQwcjA3oDWgM4YxaHR0cDovL2NybDMuZGlnaWNlcnQu
+Y29tL0Nsb3VkZmxhcmVJbmNFQ0NDQS0zLmNybDA3oDWgM4YxaHR0cDovL2NybDQu
+ZGlnaWNlcnQuY29tL0Nsb3VkZmxhcmVJbmNFQ0NDQS0zLmNybDA+BgNVHSAENzA1
+MDMGBmeBDAECAjApMCcGCCsGAQUFBwIBFhtodHRwOi8vd3d3LmRpZ2ljZXJ0LmNv
+bS9DUFMwdgYIKwYBBQUHAQEEajBoMCQGCCsGAQUFBzABhhhodHRwOi8vb2NzcC5k
+aWdpY2VydC5jb20wQAYIKwYBBQUHMAKGNGh0dHA6Ly9jYWNlcnRzLmRpZ2ljZXJ0
+LmNvbS9DbG91ZGZsYXJlSW5jRUNDQ0EtMy5jcnQwDAYDVR0TAQH/BAIwADCCAX0G
+CisGAQQB1nkCBAIEggFtBIIBaQFnAHYAKXm+8J45OSHwVnOfY6V35b5XfZxgCvj5
+TV0mXCVdx4QAAAF6r/ipLwAABAMARzBFAiEA+PG9/EgBI88/MzZ8yFiqaQlsw37X
+QXL6OBvT9lKWvqwCIGjXbKAOBFUI8whTNqgdrSpGw/kiSy0s31EJcjl46hSBAHYA
+UaOw9f0BeZxWbbg3eI8MpHrMGyfL956IQpoN/tSLBeUAAAF6r/ipfgAABAMARzBF
+AiABgpoMxv1Y/+4t8YfVhyS7MiJ0gaMepT2oTkNWUXR5SgIhANjp0deo4jUyQZHp
+rXAkQHscPed334uIJ/iskrcwH2RAAHUAQcjKsd8iRkoQxqE6CUKHXk4xixsD6+tL
+x2jwkGKWBvYAAAF6r/ipFAAABAMARjBEAiAQ1hMSqGrQvyZOpQS+wRit50rXSQh3
+qg8mU9KMbRB63gIgdKVaOifY+cjgWFjellcOFyMvg+dYKzjTQ6LA4jpifQ0wCgYI
+KoZIzj0EAwIDSQAwRgIhAN7nhZcJGCGG8Fn9jg9s/HSxa5R+oHc96/4iCd9WmeJl
+AiEAlpbVD9gYYgnlEiC7fRDk4rCJhWVfLRjuDIz+q8MSqEc=
+-----END CERTIFICATE-----
+subject=C = US, ST = California, L = San Francisco, O = "Cloudflare, Inc.", CN = sni.cloudflaressl.com
+
+issuer=C = US, O = "Cloudflare, Inc.", CN = Cloudflare Inc ECC CA-3
+
+---
+No client certificate CA names sent
+Peer signing digest: SHA256
+Peer signature type: ECDSA
+Server Temp Key: X25519, 253 bits
+---
+SSL handshake has read 2621 bytes and written 312 bytes
+Verification error: unable to get local issuer certificate
+---
+New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+Server public key is 256 bit
+Secure Renegotiation IS NOT supported
+Compression: NONE
+Expansion: NONE
+No ALPN negotiated
+Early data was not sent
+Verify return code: 20 (unable to get local issuer certificate)
+---
+

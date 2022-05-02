@@ -119,6 +119,33 @@ def get_mac_algo_keylen():
 	elif mac_algorithm == "SHA":
 		mac_algorithm_keylen = 20
 
+def HKDF_Extract(salt, IKM):
+	h = hmac.new(salt, digestmod = SHA256)
+	h.update(IKM)
+	PRK = h.digest()
+	print("PRK : %r" % binascii.hexlify(PRK))
+	return PRK
+
+def HKDF_Expand(salt, info, IKM, L):
+	PRK = HKDF_Extract(salt, IKM)
+	
+	T = []
+	T0 = b''
+	T.append(T0)
+	
+	n = 1 + L // 32
+	#print(n)
+	
+	for i in range(n):
+		h = hmac.new(PRK, digestmod = SHA256)
+		h.update(T[i] + info + (i+1).to_bytes(1, 'big'))
+		T_i_plus = h.digest()
+		T.append(T_i_plus)
+	OKM = b''
+	for i in range(len(T)):
+		OKM += T[i]
+	return OKM[:L]
+
 def derivate_crypto_handshake_material():
 	if keylogfile != None:
 	
