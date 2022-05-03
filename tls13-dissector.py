@@ -9,6 +9,8 @@ from dissector_const import *
 from dissector_globals import *
 from dissector_utils import *
 
+from Cryptodome.Cipher import AES
+
 from scapy.all import *
 
 # Some global variables to handle SSL/TLS state-machine
@@ -16,6 +18,18 @@ from scapy.all import *
 
 ## which ciphersuite was selected by the server ? ##
 selected_cipher_suite = 0x0000
+
+## which cipherAlgorithm was selected by the server ? ##
+cipher_algorithm = ""
+
+## which hash function is used by the key derivation algorithms ? ##
+prf_algorithm = ""
+
+## what is the cipherAlgorithm key length ? ##
+cipher_algorithm_keylen = 0
+
+## what is the cipherAlgorithm block length ? ##
+cipher_algorithm_blocklen = 0
 
 ## what is the TLS version selected by the server ? ##
 selected_version = None
@@ -29,6 +43,20 @@ client_handshake_secret = None
 
 encrypted_handshake = False
 
+client_handshake_key = None
+client_handshake_iv = None
+server_handshake_key = None
+server_handshake_iv = None
+
+client_app_key = None
+client_app_iv = None
+server_app_key = None
+server_app_iv = None
+
+## sequence numbers for MAC/GCM tag ##
+seq_num_cli = b''
+seq_num_srv = b''
+
 ## global variable to store the keylogfile name ##
 keylogfile = None
 
@@ -39,39 +67,29 @@ def get_cipher_algo():
 
 	cipher_suite_name = cipher_suites[selected_cipher_suite]
 
-	if cipher_suite_name.find('AES_128_CBC') != -1:
-		cipher_algorithm = "AES_128_CBC"
-	elif cipher_suite_name.find('AES_256_CBC') != -1:
-		cipher_algorithm = "AES_256_CBC"
-	elif cipher_suite_name.find('AES_128_GCM') != -1:
+	if cipher_suite_name.find('AES_128_GCM') != -1:
 		cipher_algorithm = "AES_128_GCM"
 	elif cipher_suite_name.find('AES_256_GCM') != -1:
 		cipher_algorithm = "AES_256_GCM"
-	elif cipher_suite_name.find('AES_128_CCM') != -1:
-		cipher_algorithm = "AES_128_CCM"
-	elif cipher_suite_name.find('AES_256_CCM') != -1:
-		cipher_algorithm = "AES_256_CCM"
 	elif cipher_suite_name.find('CHACHA20_POLY1305') != -1:
 		cipher_algorithm = "CHACHA20_POLY1305"
 	else:
 		cipher_algorithm = ""
 		print("%r is not supported, too bad" % cipher_suite_name)
 
-## set mac_algorithm global state variable during ServerHello ##
-def get_mac_algo():
+## set prf_algorithm global state variable during ServerHello ##
+def get_prf_algo():
 	global selected_cipher_suite
-	global mac_algorithm
+	global prf_algorithm
 
 	cipher_suite_name = cipher_suites[selected_cipher_suite]
 
 	if cipher_suite_name.find('SHA256') != -1:
-		mac_algorithm = "SHA256"
+		prf_algorithm = "SHA256"
 	elif cipher_suite_name.find('SHA384') != -1:
-		mac_algorithm = "SHA384"
-	elif cipher_suite_name.find('SHA') != -1:
-		mac_algorithm = "SHA"
+		prf_algorithm = "SHA384"
 	else:
-		mac_algorithm = ""
+		prf_algorithm = ""
 		print("%r is not supported, too bad" % cipher_suite_name)
 
 ## set cipher_algorithm_keylen global state variable during ServerHello ##
@@ -79,11 +97,7 @@ def get_cipher_algo_keylen():
 	global cipher_algorithm
 	global cipher_algorithm_keylen
 
-	if cipher_algorithm == "AES_128_CBC":
-		cipher_algorithm_keylen = 16
-	elif cipher_algorithm == "AES_256_CBC":
-		cipher_algorithm_keylen = 32
-	elif cipher_algorithm == "AES_128_GCM":
+	if cipher_algorithm == "AES_128_GCM":
 		cipher_algorithm_keylen = 16
 	elif cipher_algorithm == "AES_256_GCM":
 		cipher_algorithm_keylen = 32
@@ -93,11 +107,10 @@ def get_cipher_algo_blocklen():
 	global cipher_algorithm
 	global cipher_algorithm_blocklen
 
-	if cipher_algorithm == "AES_128_CBC" or cipher_algorithm == "AES_256_CBC":
-		cipher_algorithm_blocklen = 16
-
 	if cipher_algorithm == "AES_128_GCM" or cipher_algorithm == "AES_256_GCM":
 		cipher_algorithm_blocklen = 16
+	else:
+		print("%r is not supported, too bad" % cipher_algorithm)
 
 ## set cipher_algorithm_saltlen global state variable during ServerHello ##
 def get_cipher_algo_saltlen():
@@ -107,17 +120,22 @@ def get_cipher_algo_saltlen():
 	if cipher_algorithm == "AES_128_GCM" or cipher_algorithm == "AES_256_GCM":
 		cipher_algorithm_saltlen = 4
 
-## set mac_algorithm_keylen global state variable during ServerHello ##
-def get_mac_algo_keylen():
-	global mac_algorithm
-	global mac_algorithm_keylen
+## set prf_algorithm_keylen global state variable during ServerHello ##
+def get_prf_algo_keylen():
+	global prf_algorithm
+	global prf_algorithm_keylen
 
-	if mac_algorithm == "SHA384":
-		mac_algorithm_keylen = 48
-	elif mac_algorithm == "SHA256":
-		mac_algorithm_keylen = 32
-	elif mac_algorithm == "SHA":
-		mac_algorithm_keylen = 20
+	if prf_algorithm == "SHA384":
+		prf_algorithm_keylen = 48
+	elif prf_algorithm == "SHA256":
+		prf_algorithm_keylen = 32
+
+## xor 2 strings ##
+def xor(x, y):
+	if len(x) != len(y):
+		print("error, x and y don't have the same length");
+		exit(0)
+	return bytes(a ^ b for a, b in zip(x, y))
 
 def HKDF_Extract(salt, IKM):
 	h = hmac.new(salt, digestmod = SHA256)
@@ -126,9 +144,14 @@ def HKDF_Extract(salt, IKM):
 	print("PRK : %r" % binascii.hexlify(PRK))
 	return PRK
 
-def HKDF_Expand(salt, info, IKM, L):
-	PRK = HKDF_Extract(salt, IKM)
-	
+def HKDF_Extract(salt, IKM, algo):
+	h = hmac.new(salt, digestmod = algo)
+	h.update(IKM)
+	PRK = h.digest()
+	print("PRK : %r" % binascii.hexlify(PRK))
+	return PRK
+
+def HKDF_Expand(PRK, info, L, algo):
 	T = []
 	T0 = b''
 	T.append(T0)
@@ -137,7 +160,7 @@ def HKDF_Expand(salt, info, IKM, L):
 	#print(n)
 	
 	for i in range(n):
-		h = hmac.new(PRK, digestmod = SHA256)
+		h = hmac.new(PRK, digestmod = algo)#SHA256)
 		h.update(T[i] + info + (i+1).to_bytes(1, 'big'))
 		T_i_plus = h.digest()
 		T.append(T_i_plus)
@@ -146,7 +169,27 @@ def HKDF_Expand(salt, info, IKM, L):
 		OKM += T[i]
 	return OKM[:L]
 
+def HKDF_Expand_Label(secret, label, context, L, algo):
+	tmpLabel = b'tls13 ' + label
+	HkdfLabel = L.to_bytes(2, 'big') + (len(tmpLabel)).to_bytes(1, 'big') + tmpLabel + context
+	#print("HkdfLabel : %r" % binascii.hexlify(HkdfLabel))
+	return HKDF_Expand(secret, HkdfLabel, L, algo)
+
 def derivate_crypto_handshake_material():
+
+	global client_handshake_key
+	global client_handshake_iv
+	global server_handshake_key
+	global server_handshake_iv
+
+	global client_app_key
+	global client_app_iv
+	global server_app_key
+	global server_app_iv
+
+	global seq_num_cli
+	global seq_num_srv
+
 	if keylogfile != None:
 	
 		if debug == True:
@@ -164,6 +207,7 @@ def derivate_crypto_handshake_material():
 			fd.close()
 			return
 
+		# read the SERVER_HANDSHAKE_TRAFFIC_SECRET
 		server_handshake_line = keyfilecontent[1]
 		server_handshake_line_token = server_handshake_line.split(' ')
 		if len(server_handshake_line_token) < 3:
@@ -175,6 +219,19 @@ def derivate_crypto_handshake_material():
 		server_handshake_secret_hex = server_handshake_secret_hex_raw.strip()
 		server_handshake_secret = binascii.unhexlify(server_handshake_secret_hex)
 
+		# read the SERVER_TRAFFIC_SECRET
+		server_app_line = keyfilecontent[3]
+		server_app_line_token = server_app_line.split(' ')
+		if len(server_app_line_token) < 3:
+			print("Error - %r is corrupted" % keylogfile)
+			fd.close()
+			return
+
+		server_app_secret_hex_raw = server_app_line_token[2]
+		server_app_secret_hex = server_app_secret_hex_raw.strip()
+		server_app_secret = binascii.unhexlify(server_app_secret_hex)
+
+		# read the CLIENT_HANDSHAKE_TRAFFIC_SECRET
 		client_handshake_line = keyfilecontent[4]
 		client_handshake_line_token = client_handshake_line.split(' ')
 		if len(client_handshake_line_token) < 3:
@@ -186,11 +243,63 @@ def derivate_crypto_handshake_material():
 		client_handshake_secret_hex = client_handshake_secret_hex_raw.strip()
 		client_handshake_secret = binascii.unhexlify(client_handshake_secret_hex)
 
+		# read the CLIENT_TRAFFIC_SECRET
+		client_app_line = keyfilecontent[5]
+		client_app_line_token = client_app_line.split(' ')
+		if len(client_app_line_token) < 3:
+			print("Error - %r is corrupted" % keylogfile)
+			fd.close()
+			return
+
+		client_app_secret_hex_raw = client_app_line_token[2]
+		client_app_secret_hex = client_app_secret_hex_raw.strip()
+		client_app_secret = binascii.unhexlify(client_app_secret_hex)
+
 		fd.close()
+
 		if debug == True:
 			print("server_handshake_secret : %r\n" % server_handshake_secret)
 			print("client_handshake_secret : %r\n" % client_handshake_secret)
-		exit(0)
+			print("server_app_secret : %r\n" % server_app_secret)
+			print("client_app_secret : %r\n" % client_app_secret)
+			print("PRF function : %r" % prf_algorithm)
+			print("cipher_algorithm : %r" % cipher_algorithm)
+			print("cipher_algorithm_keylen : %r" % cipher_algorithm_keylen)
+		#exit(0)
+
+		# HKDF_Expand_Label needs a label (!)
+		key_label = b'key'
+		iv_label = b'iv'
+
+		# generate client handshake crypto stuffs
+		client_handshake_key = HKDF_Expand_Label(client_handshake_secret, key_label, b'\x00', cipher_algorithm_keylen, prf_algorithm)
+		client_handshake_iv = HKDF_Expand_Label(client_handshake_secret, iv_label, b'\x00', 12, prf_algorithm)
+
+		# generate server handshake crypto stuffs
+		server_handshake_key = HKDF_Expand_Label(server_handshake_secret, key_label, b'\x00', cipher_algorithm_keylen, prf_algorithm)
+		server_handshake_iv = HKDF_Expand_Label(server_handshake_secret, iv_label, b'\x00', 12, prf_algorithm)
+
+		print("client handshake key : %r" % binascii.hexlify(client_handshake_key))
+		print("client handshake iv : %r" % binascii.hexlify(client_handshake_iv))
+		print("server handshake key : %r" % binascii.hexlify(server_handshake_key))
+		print("server handshake iv : %r" % binascii.hexlify(server_handshake_iv))
+
+		# generate client app crypto stuffs
+		client_app_key = HKDF_Expand_Label(client_app_secret, key_label, b'\x00', cipher_algorithm_keylen, prf_algorithm)
+		client_app_iv = HKDF_Expand_Label(client_app_secret, iv_label, b'\x00', 12, prf_algorithm)
+
+		# generate server app crypto stuffs
+		server_app_key = HKDF_Expand_Label(server_app_secret, key_label, b'\x00', cipher_algorithm_keylen, prf_algorithm)
+		server_app_iv = HKDF_Expand_Label(server_app_secret, iv_label, b'\x00', 12, prf_algorithm)
+
+		print("client app key : %r" % binascii.hexlify(client_app_key))
+		print("client app iv : %r" % binascii.hexlify(client_app_iv))
+		print("server app key : %r" % binascii.hexlify(server_app_key))
+		print("server app iv : %r" % binascii.hexlify(server_app_iv))
+
+		print("derivate_crypto_handshake_material, reinitialization of sequence numbers")
+		seq_num_cli = b'\x00\x00\x00\x00\x00\x00\x00\x00'
+		seq_num_srv = b'\x00\x00\x00\x00\x00\x00\x00\x00'
 
 # TLS records analysis functions
 # These functions are sorted according to the record type value :
@@ -385,8 +494,8 @@ def dissect_server_hello(hello_message):
 	get_cipher_algo_blocklen()
 	get_cipher_algo_saltlen()
 
-	get_mac_algo()
-	get_mac_algo_keylen()
+	get_prf_algo()
+	get_prf_algo_keylen()
 
 	offset += 2
 
@@ -429,16 +538,120 @@ def dissect_server_hello(hello_message):
 
 	encrypted_handshake = True
 	derivate_crypto_handshake_material()
-	print("  ServerHello sent, subsequent handshake messages will be encrypted") 
+	print("  ServerHello sent, subsequent handshake messages will be encrypted\n")
 	
 	return offset
+
+# Parse an NewSessionTicket message
+#
+def dissect_new_session_ticket(hello_message):
+	offset = 0
+
+# Parse an EndOfEarlyData message
+#
+def dissect_end_of_early_data(hello_message):
+	offset = 0
+
+# Parse an EncryptedExtension message
+#
+def dissect_encrypted_extension(hello_message):
+
+	offset = 0
+
+	print("encrypted_extension : %r" % binascii.hexlify(hello_message[:4]))
+	encrypted_extension_length = int.from_bytes(hello_message[offset : offset + 2], 'big')
+	offset += 2
+
+	print("len : %r" % encrypted_extension_length)
+	print("encrypted extension : %r " % hello_message[offset : offset + encrypted_extension_length])
+	
+	offset += encrypted_extension_length
+	return offset
+
+
+# returns a base64-nicely-encoded certificate
+#
+def dump_b64_cert(certificate):
+	b64_cert_raw = base64.b64encode(certificate)
+	b64_cert = ""
+	i = 0
+
+	while i < len(b64_cert_raw):
+		b64_cert_chunk = b64_cert_raw[i : i + 64]
+		b64_cert += "  "
+		b64_cert += b64_cert_chunk.decode('ascii')
+		b64_cert += "\n"
+		i += 64
+	return b64_cert
+
+# Parse a Certificate message
+#
+def dissect_certificates_chain(hello_message):
+
+	offset = 0
+
+	# Unlike previous version, TLSv1.3 certificate structure contains a opaque certificate_request_context<0..2^8-1>
+	# We shamelessly consider that this substructure is always NULL
+	# TODO : handle properly this certificate_request_context
+	offset += 1
+
+	certificate_count = 0
+	certificates_len = int.from_bytes(hello_message[offset : offset + 3], 'big')
+	offset += 3
+	
+	remaining_len = certificates_len
+
+	print("  certificates chain length : %r" % certificates_len)
+
+	while remaining_len > 0:
+		certificate_len = int.from_bytes(hello_message[offset : offset + 3], 'big')
+		offset += 3
+		remaining_len -= 3
+
+		certificate = hello_message[offset : offset + certificate_len]
+		print("  certificate n°%r, %r (%r) bytes : \n%s" % (certificate_count, certificate_len, hex(certificate_len), dump_b64_cert(certificate)))
+
+		offset += certificate_len
+		remaining_len -= certificate_len
+
+		offset += 2
+		remaining_len -= 2
+		print("remaining_len : %r" % remaining_len)
+
+		certificate_count += 1
+
+	print("  read all the certificates ! ")
+
+	return offset
+
+def dissect_certificate_verify(hello_message):
+	offset = 0
+
+# Parse a Finished message
+#
+def dissect_finished(hello_message):
+
+	global seq_num_cli
+	global seq_num_srv
+
+	global encrypted_handshake
+	global encrypted_app
+
+	if dissector_globals.is_from_client == True:
+		encrypted_handshake = False
+		encrypted_app = True
+
+		print("dissect_finished, reinitialization of sequence numbers")
+		seq_num_cli = b'\x00\x00\x00\x00\x00\x00\x00\x00'
+		seq_num_srv = b'\x00\x00\x00\x00\x00\x00\x00\x00'
+
 
 # Parse an Handshake record
 # - Note that an Handshake record can contain multiple handshake messages
 #
 def dissect_handshake_record(handshake_record):
 
-	print("  Handshake record")
+	print("  Handshake record")#;print("%r"%binascii.hexlify(handshake_record));exit()
 
 	# record total length
 	record_len = len(handshake_record)
@@ -537,12 +750,97 @@ def dissect_handshake_record(handshake_record):
 		# increment the record counter
 		message_index += 1
 
+def decrypt_TLS_13_record(tls_record, key, iv):
+
+	global seq_num_cli
+	global seq_num_srv
+
+	aead_ciphertext = tls_record
+
+	additional_data =  b'\x17' + b'\x03\x03' + (len(aead_ciphertext)).to_bytes(2, 'big')
+
+	if dissector_globals.is_from_client:
+		seq_num = seq_num_cli
+	else:
+		seq_num = seq_num_srv
+
+	nonce = xor(iv, b'\x00\x00\x00\x00' + seq_num)
+	print("nonce : %r" % binascii.hexlify(nonce))
+
+	cipher = AES.new(key, AES.MODE_GCM, nonce)
+	cipher.update(additional_data)
+	plaintext = cipher.decrypt(aead_ciphertext[: - cipher_algorithm_blocklen])
+	plaintext_type = plaintext[-1]
+	plaintext = plaintext[:-1]
+
+	if debug == True:
+		print("  seq_num : %r " % binascii.hexlify(seq_num))
+		print("  nonce : %r" % binascii.hexlify(nonce))
+		print("  tag from packet : %r (%r bytes)" % ((binascii.hexlify(aead_ciphertext[- cipher_algorithm_blocklen : ])), len(aead_ciphertext[- cipher_algorithm_blocklen : ])))
+	print("  plaintext : %r" % plaintext)
+	print("  plaintext type : %r" % plaintext_type)
+
+	# decrypt the ciphertext is good, but check the tag is even better
+	try:
+		tag = cipher.verify(aead_ciphertext[- cipher_algorithm_blocklen : ])
+		print("  GCM tag is correct :-)")
+
+		if plaintext_type == 22:
+			print("going to parse the decrypted handshake :-)")
+			dissect_handshake_record(plaintext)
+
+	except ValueError:
+		print("  GCM tag is not correct :-(")
+
+	# increment sequence number
+	seq_num_int = int.from_bytes(seq_num, 'big')
+	seq_num_int += 1
+	seq_num = seq_num_int.to_bytes(8, 'big')
+	if dissector_globals.is_from_client:
+		seq_num_cli = seq_num
+	else:
+		seq_num_srv = seq_num
+
+	print("end of decryption, seq_num_cli : %r seq_num_srv : %r" % (seq_num_cli, seq_num_srv))
+
 # Parse an Application record
 # Basically nothing to do, unless a keylogfile is used
 #
-def dissect_application_record(tls_record):
+def dissect_application_record(tls_record,):
 
 	print("  Application record")
+
+	if encrypted_handshake == True:
+		print("client handshake key: %r" % binascii.hexlify(client_handshake_key))
+		print("client handshake iv: %r" % binascii.hexlify(client_handshake_iv))
+		print("server handshake key: %r" % binascii.hexlify(server_handshake_key))
+		print("server handshake iv: %r" % binascii.hexlify(server_handshake_iv))
+		print("is_from_client : %r" % is_from_client)
+
+		if dissector_globals.is_from_client:
+			key = client_handshake_key
+			iv = client_handshake_iv
+		else:
+			key = server_handshake_key
+			iv = server_handshake_iv
+
+	elif encrypted_app == True:
+		print("client app key: %r" % binascii.hexlify(client_app_key))
+		print("client app iv: %r" % binascii.hexlify(client_app_iv))
+		print("server app key: %r" % binascii.hexlify(server_app_key))
+		print("server app iv: %r" % binascii.hexlify(server_app_iv))
+		print("is_from_client : %r" % is_from_client)
+		
+		if dissector_globals.is_from_client:
+			key = client_app_key
+			iv = client_app_iv
+		else:
+			key = server_app_key
+			iv = server_app_iv
+	else:
+		print("  Application record - no key to decrypt, too bad!")
+		return
+	decrypt_TLS_13_record(tls_record, key, iv)
 
 # loop over the TCP payload
 # to dissect all the TLS records
