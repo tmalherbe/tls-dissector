@@ -15,14 +15,14 @@ from Cryptodome.Util.Padding import unpad
 
 from scapy.all import *
 
-def HKDF_Extract(salt, IKM):
-	h = hmac.new(salt, digestmod = SHA384)#SHA256)
+def HKDF_Extract(salt, IKM, algo):
+	h = hmac.new(salt, digestmod = algo)
 	h.update(IKM)
 	PRK = h.digest()
 	print("PRK : %r" % binascii.hexlify(PRK))
 	return PRK
 
-def HKDF_Expand(PRK, info, L):
+def HKDF_Expand(PRK, info, L, algo):
 	T = []
 	T0 = b''
 	T.append(T0)
@@ -31,7 +31,7 @@ def HKDF_Expand(PRK, info, L):
 	#print(n)
 	
 	for i in range(n):
-		h = hmac.new(PRK, digestmod = SHA384)#SHA256)
+		h = hmac.new(PRK, digestmod = algo)#SHA256)
 		h.update(T[i] + info + (i+1).to_bytes(1, 'big'))
 		T_i_plus = h.digest()
 		T.append(T_i_plus)
@@ -41,17 +41,17 @@ def HKDF_Expand(PRK, info, L):
 	return OKM[:L]
 
 
-def HKDF_Expand_big(salt, info, IKM, L):
-	PRK = HKDF_Extract(salt, IKM)
+def HKDF_Expand_big(salt, info, IKM, L, algo):
+	PRK = HKDF_Extract(salt, IKM, algo)
 	
-	return HKDF_Expand(PRK, info, L)
+	return HKDF_Expand(PRK, info, L, algo)
 
 print("test 1")
 IKM = b'\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b'
 salt = b'\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c'
 info = b'\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\xf8\xf9'
 L = 42
-OKM = HKDF_Expand_big(salt, info, IKM, L)
+OKM = HKDF_Expand_big(salt, info, IKM, L, 'SHA256')
 print("OKM : %r" % binascii.hexlify(OKM))
 
 print("test 2")
@@ -66,7 +66,7 @@ print("IKM : %r" % binascii.hexlify(IKM))
 print("salt : %r" % binascii.hexlify(salt))
 print("info : %r" % binascii.hexlify(info))
 L = 82
-OKM = HKDF_Expand_big(salt, info, IKM, L)
+OKM = HKDF_Expand_big(salt, info, IKM, L, 'SHA256')
 print("OKM : %r" % binascii.hexlify(OKM))
 
 print("test 3")
@@ -74,7 +74,7 @@ IKM = b'\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b
 salt = b''
 info = b''
 L = 42
-OKM = HKDF_Expand_big(salt, info, IKM, L)
+OKM = HKDF_Expand_big(salt, info, IKM, L, 'SHA256')
 print("OKM : %r" % binascii.hexlify(OKM))
 
 client_hello = b'\x01\x00\x00\xc0\x03\x03\xcb\x34\xec\xb1\xe7\x81\x63\xba\x1c\x38\xc6\xda\xcb\x19\x6a\x6d\xff\xa2\x1a\x8d\x99\x12\xec\x18\xa2\xef\x62\x83\x02\x4d\xec\xe7\x00\x00\x06\x13\x01\x13\x03\x13\x02\x01\x00\x00\x91\x00\x00\x00\x0b\x00\x09\x00\x00\x06\x73\x65\x72\x76\x65\x72\xff\x01\x00\x01\x00\x00\x0a\x00\x14\x00\x12\x00\x1d\x00\x17\x00\x18\x00\x19\x01\x00\x01\x01\x01\x02\x01\x03\x01\x04\x00\x23\x00\x00\x00\x33\x00\x26\x00\x24\x00\x1d\x00\x20\x99\x38\x1d\xe5\x60\xe4\xbd\x43\xd2\x3d\x8e\x43\x5a\x7d\xba\xfe\xb3\xc0\x6e\x51\xc1\x3c\xae\x4d\x54\x13\x69\x1e\x52\x9a\xaf\x2c\x00\x2b\x00\x03\x02\x03\x04\x00\x0d\x00\x20\x00\x1e\x04\x03\x05\x03\x06\x03\x02\x03\x08\x04\x08\x05\x08\x06\x04\x01\x05\x01\x06\x01\x02\x01\x04\x02\x05\x02\x06\x02\x02\x02\x00\x2d\x00\x02\x01\x01\x00\x1c\x00\x02\x40\x01'
@@ -85,12 +85,12 @@ h.update(client_hello)
 h.update(server_hello)
 print("transcript-hash : %r" % h.hexdigest())
 
-def HKDF_Expand_Label(secret, label, context, L):
+def HKDF_Expand_Label(secret, label, context, L, algo):
 	tmpLabel = b'tls13 ' + label
 	HkdfLabel = L.to_bytes(2, 'big') + (len(tmpLabel)).to_bytes(1, 'big') + tmpLabel + context
 	print("HkdfLabel : %r" % binascii.hexlify(HkdfLabel))
 
-	return HKDF_Expand(secret, HkdfLabel, L)
+	return HKDF_Expand(secret, HkdfLabel, L, algo)
 
 ####################################################################################################################################
 
@@ -103,14 +103,14 @@ SERVER_HANDSHAKE_TRAFFIC_SECRET = b'\x24\x8D\xB6\x35\x31\xA8\x27\x7F\x13\x0B\x9A
 salt = SERVER_HANDSHAKE_TRAFFIC_SECRET
 label = b'key'
 L = 32
-server_key = HKDF_Expand_Label(salt, label, b'\x00', L)
+server_key = HKDF_Expand_Label(salt, label, b'\x00', L, 'SHA384')
 print("server_key : %r" % binascii.hexlify(server_key))
 print("")
 
 salt = SERVER_HANDSHAKE_TRAFFIC_SECRET
 label = b'iv'
 L = 12
-server_key = HKDF_Expand_Label(salt, label, b'\x00', L)
+server_key = HKDF_Expand_Label(salt, label, b'\x00', L, 'SHA384')
 print("iv : %r" % binascii.hexlify(server_key))
 print("")
 exit(0)
@@ -121,14 +121,14 @@ print("test from rfc 8448")
 salt = b'\xb6\x7b\x7d\x69\x0c\xc1\x6c\x4e\x75\xe5\x42\x13\xcb\x2d\x37\xb4\xe9\xc9\x12\xbc\xde\xd9\x10\x5d\x42\xbe\xfd\x59\xd3\x91\xad\x38'
 label = b'key'
 L = 16
-server_key = HKDF_Expand_Label(salt, label, b'\x00', L)
+server_key = HKDF_Expand_Label(salt, label, b'\x00', L, 'SHA256')
 print("server key : %r" % binascii.hexlify(server_key))
 print("")
 
 label = b'iv'
 L = 12
-server_key = HKDF_Expand_Label(salt, label, b'\x00', L)
-print("server iv : %r" % binascii.hexlify(server_key))
+server_iv = HKDF_Expand_Label(salt, label, b'\x00', L, 'SHA256')
+print("server iv : %r" % binascii.hexlify(server_iv))
 print("")
 
 # server_write_key = HKDF-Expand-Label(Secret, "key", "", key_length)
