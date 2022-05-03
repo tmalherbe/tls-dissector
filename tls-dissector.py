@@ -321,7 +321,7 @@ def PRF(secret, label, seed):
 		else:
 			return P_SHA256(secret, label + seed, 20)
 
-## reads master_secret from keylogfile and computes key_material using PRF() ##
+## read master_secret from keylogfile and computes key_material using PRF() ##
 def derivate_crypto_material():
 
 	global key_block

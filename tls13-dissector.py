@@ -38,16 +38,22 @@ selected_version = None
 client_random = None
 server_random = None
 
+## A secret for the server, another one for the client ##
 server_handshake_secret = None
 client_handshake_secret = None
 
+## global variable who becomes True juste after ServerHello           ##
+## (at this point server starts sending encrypted handshake messages) ##
+## and becomes false again when handshake is finished                 ##
 encrypted_handshake = False
 
+## cryptographic material for handshake ##
 client_handshake_key = None
 client_handshake_iv = None
 server_handshake_key = None
 server_handshake_iv = None
 
+## cryptographic material for traffic ##
 client_app_key = None
 client_app_iv = None
 server_app_key = None
@@ -137,13 +143,7 @@ def xor(x, y):
 		exit(0)
 	return bytes(a ^ b for a, b in zip(x, y))
 
-def HKDF_Extract(salt, IKM):
-	h = hmac.new(salt, digestmod = SHA256)
-	h.update(IKM)
-	PRK = h.digest()
-	print("PRK : %r" % binascii.hexlify(PRK))
-	return PRK
-
+## key derivation internals, 1 ##
 def HKDF_Extract(salt, IKM, algo):
 	h = hmac.new(salt, digestmod = algo)
 	h.update(IKM)
@@ -151,6 +151,7 @@ def HKDF_Extract(salt, IKM, algo):
 	print("PRK : %r" % binascii.hexlify(PRK))
 	return PRK
 
+## key derivation internals, 2 ##
 def HKDF_Expand(PRK, info, L, algo):
 	T = []
 	T0 = b''
@@ -169,13 +170,15 @@ def HKDF_Expand(PRK, info, L, algo):
 		OKM += T[i]
 	return OKM[:L]
 
+## key derivation internals, 3 ##
 def HKDF_Expand_Label(secret, label, context, L, algo):
 	tmpLabel = b'tls13 ' + label
 	HkdfLabel = L.to_bytes(2, 'big') + (len(tmpLabel)).to_bytes(1, 'big') + tmpLabel + context
 	#print("HkdfLabel : %r" % binascii.hexlify(HkdfLabel))
 	return HKDF_Expand(secret, HkdfLabel, L, algo)
 
-def derivate_crypto_handshake_material():
+## read secrets from keylogfile then generate keys&iv ##
+def derivate_crypto_material():
 
 	global client_handshake_key
 	global client_handshake_iv
@@ -265,7 +268,6 @@ def derivate_crypto_handshake_material():
 			print("PRF function : %r" % prf_algorithm)
 			print("cipher_algorithm : %r" % cipher_algorithm)
 			print("cipher_algorithm_keylen : %r" % cipher_algorithm_keylen)
-		#exit(0)
 
 		# HKDF_Expand_Label needs a label (!)
 		key_label = b'key'
@@ -279,10 +281,11 @@ def derivate_crypto_handshake_material():
 		server_handshake_key = HKDF_Expand_Label(server_handshake_secret, key_label, b'\x00', cipher_algorithm_keylen, prf_algorithm)
 		server_handshake_iv = HKDF_Expand_Label(server_handshake_secret, iv_label, b'\x00', 12, prf_algorithm)
 
-		print("client handshake key : %r" % binascii.hexlify(client_handshake_key))
-		print("client handshake iv : %r" % binascii.hexlify(client_handshake_iv))
-		print("server handshake key : %r" % binascii.hexlify(server_handshake_key))
-		print("server handshake iv : %r" % binascii.hexlify(server_handshake_iv))
+		if debug == True:
+			print("client handshake key : %r" % binascii.hexlify(client_handshake_key))
+			print("client handshake iv : %r" % binascii.hexlify(client_handshake_iv))
+			print("server handshake key : %r" % binascii.hexlify(server_handshake_key))
+			print("server handshake iv : %r" % binascii.hexlify(server_handshake_iv))
 
 		# generate client app crypto stuffs
 		client_app_key = HKDF_Expand_Label(client_app_secret, key_label, b'\x00', cipher_algorithm_keylen, prf_algorithm)
@@ -292,12 +295,14 @@ def derivate_crypto_handshake_material():
 		server_app_key = HKDF_Expand_Label(server_app_secret, key_label, b'\x00', cipher_algorithm_keylen, prf_algorithm)
 		server_app_iv = HKDF_Expand_Label(server_app_secret, iv_label, b'\x00', 12, prf_algorithm)
 
-		print("client app key : %r" % binascii.hexlify(client_app_key))
-		print("client app iv : %r" % binascii.hexlify(client_app_iv))
-		print("server app key : %r" % binascii.hexlify(server_app_key))
-		print("server app iv : %r" % binascii.hexlify(server_app_iv))
+		if debug == True:
+			print("client app key : %r" % binascii.hexlify(client_app_key))
+			print("client app iv : %r" % binascii.hexlify(client_app_iv))
+			print("server app key : %r" % binascii.hexlify(server_app_key))
+			print("server app iv : %r" % binascii.hexlify(server_app_iv))
 
-		print("derivate_crypto_handshake_material, reinitialization of sequence numbers")
+		if debug == True:
+			print("derivate_crypto_material, reinitialization of sequence numbers")
 		seq_num_cli = b'\x00\x00\x00\x00\x00\x00\x00\x00'
 		seq_num_srv = b'\x00\x00\x00\x00\x00\x00\x00\x00'
 
@@ -537,7 +542,7 @@ def dissect_server_hello(hello_message):
 		exit(0)
 
 	encrypted_handshake = True
-	derivate_crypto_handshake_material()
+	derivate_crypto_material()
 	print("  ServerHello sent, subsequent handshake messages will be encrypted\n")
 	
 	return offset
@@ -614,9 +619,11 @@ def dissect_certificates_chain(hello_message):
 		offset += certificate_len
 		remaining_len -= certificate_len
 
+		# We can have extension after the certificate.
+		# We consider we haven't any extension.
+		# Yes, it's bad.
 		offset += 2
 		remaining_len -= 2
-		print("remaining_len : %r" % remaining_len)
 
 		certificate_count += 1
 
@@ -750,6 +757,7 @@ def dissect_handshake_record(handshake_record):
 		# increment the record counter
 		message_index += 1
 
+# Decrypt a TLSv1.3 application record
 def decrypt_TLS_13_record(tls_record, key, iv):
 
 	global seq_num_cli
@@ -757,19 +765,22 @@ def decrypt_TLS_13_record(tls_record, key, iv):
 
 	aead_ciphertext = tls_record
 
-	additional_data =  b'\x17' + b'\x03\x03' + (len(aead_ciphertext)).to_bytes(2, 'big')
-
+	# get the sequence number for the nonce
 	if dissector_globals.is_from_client:
 		seq_num = seq_num_cli
 	else:
 		seq_num = seq_num_srv
 
+	# Unlike the partially-explicit nonce in TLSv1.2,
+	# The TLSv1.3 nonce is the sequence number xored with the IV
 	nonce = xor(iv, b'\x00\x00\x00\x00' + seq_num)
-	print("nonce : %r" % binascii.hexlify(nonce))
+	additional_data =  b'\x17' + b'\x03\x03' + (len(aead_ciphertext)).to_bytes(2, 'big')
 
 	cipher = AES.new(key, AES.MODE_GCM, nonce)
 	cipher.update(additional_data)
 	plaintext = cipher.decrypt(aead_ciphertext[: - cipher_algorithm_blocklen])
+
+	# in TLSv1.3 the last encrypted byte indicates the message type
 	plaintext_type = plaintext[-1]
 	plaintext = plaintext[:-1]
 
@@ -778,19 +789,7 @@ def decrypt_TLS_13_record(tls_record, key, iv):
 		print("  nonce : %r" % binascii.hexlify(nonce))
 		print("  tag from packet : %r (%r bytes)" % ((binascii.hexlify(aead_ciphertext[- cipher_algorithm_blocklen : ])), len(aead_ciphertext[- cipher_algorithm_blocklen : ])))
 	print("  plaintext : %r" % plaintext)
-	print("  plaintext type : %r" % plaintext_type)
-
-	# decrypt the ciphertext is good, but check the tag is even better
-	try:
-		tag = cipher.verify(aead_ciphertext[- cipher_algorithm_blocklen : ])
-		print("  GCM tag is correct :-)")
-
-		if plaintext_type == 22:
-			print("going to parse the decrypted handshake :-)")
-			dissect_handshake_record(plaintext)
-
-	except ValueError:
-		print("  GCM tag is not correct :-(")
+	print("  plaintext type : %r" % get_content_type(plaintext_type))
 
 	# increment sequence number
 	seq_num_int = int.from_bytes(seq_num, 'big')
@@ -801,7 +800,19 @@ def decrypt_TLS_13_record(tls_record, key, iv):
 	else:
 		seq_num_srv = seq_num
 
-	print("end of decryption, seq_num_cli : %r seq_num_srv : %r" % (seq_num_cli, seq_num_srv))
+	# decrypt the ciphertext is good, but check the tag is even better
+	try:
+		tag = cipher.verify(aead_ciphertext[- cipher_algorithm_blocklen : ])
+		print("  GCM tag is correct :-)")
+
+		# if the GCM tag agrees on it,
+		# we can analyze the decrypted content
+		if plaintext_type == 22:
+			print("  Going to parse the decrypted handshake :-)")
+			dissect_handshake_record(plaintext)
+
+	except ValueError:
+		print("  GCM tag is not correct :-(")
 
 # Parse an Application record
 # Basically nothing to do, unless a keylogfile is used
@@ -810,27 +821,17 @@ def dissect_application_record(tls_record,):
 
 	print("  Application record")
 
+	# if handshake is not finished yet,
+	# use handshake crypto material...
 	if encrypted_handshake == True:
-		print("client handshake key: %r" % binascii.hexlify(client_handshake_key))
-		print("client handshake iv: %r" % binascii.hexlify(client_handshake_iv))
-		print("server handshake key: %r" % binascii.hexlify(server_handshake_key))
-		print("server handshake iv: %r" % binascii.hexlify(server_handshake_iv))
-		print("is_from_client : %r" % is_from_client)
-
 		if dissector_globals.is_from_client:
 			key = client_handshake_key
 			iv = client_handshake_iv
 		else:
 			key = server_handshake_key
 			iv = server_handshake_iv
-
+	# otherwise use traffic crypto material
 	elif encrypted_app == True:
-		print("client app key: %r" % binascii.hexlify(client_app_key))
-		print("client app iv: %r" % binascii.hexlify(client_app_iv))
-		print("server app key: %r" % binascii.hexlify(server_app_key))
-		print("server app iv: %r" % binascii.hexlify(server_app_iv))
-		print("is_from_client : %r" % is_from_client)
-		
 		if dissector_globals.is_from_client:
 			key = client_app_key
 			iv = client_app_iv
