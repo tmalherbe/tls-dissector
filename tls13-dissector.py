@@ -648,7 +648,8 @@ def dissect_finished(hello_message):
 		encrypted_handshake = False
 		encrypted_app = True
 
-		print("dissect_finished, reinitialization of sequence numbers")
+		if debug == True:
+		    print("  dissect_finished, reinitialization of sequence numbers")
 		seq_num_cli = b'\x00\x00\x00\x00\x00\x00\x00\x00'
 		seq_num_srv = b'\x00\x00\x00\x00\x00\x00\x00\x00'
 

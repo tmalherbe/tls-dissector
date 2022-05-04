@@ -673,7 +673,7 @@ def dump_b64_cert(certificate):
 # Parse a Certificate message
 #
 def dissect_certificates_chain(hello_message):
-	print("ee %r " % binascii.hexlify(hello_message))
+
 	offset = 0
 
 	certificate_count = 0
@@ -698,7 +698,7 @@ def dissect_certificates_chain(hello_message):
 
 	print("  read all the certificates ! ")
 
-	exit(0);return offset
+	return offset
 
 # Parse a ServerKeyExchange message
 #
