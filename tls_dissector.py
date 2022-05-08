@@ -1206,8 +1206,7 @@ def dissect_tls_packet(packet, index):
 	global previous_record_index
 
 	# check IP&TCP layers
-	check_tcpip_layer(packet, index)
-	#get_packet_direction()
+	check_tcpip_layer(packet, index, True)
 
 	tls_packet = bytes(packet[TCP].payload)
 
