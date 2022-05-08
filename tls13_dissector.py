@@ -855,8 +855,7 @@ def dissect_tls_packet(packet, index):
 	global previous_record_index
 
 	# check IP&TCP layers
-	check_tcpip_layer(packet, index)
-	#get_packet_direction()
+	check_tcpip_layer(packet, index, True)
 
 	tls_packet = bytes(packet[TCP].payload)
 
@@ -1000,7 +999,7 @@ def main():
 		exit(0)
 
 	# by assumption, first packet is from client to server
-	is_from_client = True
+	dissector_globals.is_from_client = True
 
 	# there is no key exchange algorithm at the very begining
 	key_exchange_algorithm = ""

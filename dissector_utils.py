@@ -10,10 +10,10 @@ def get_packet_direction():
 
 # Check IP/TCP layer:
 # - IP4/IPv6 layer is mandatory
-# - TCP layer is mandatory
+# - TCP/UDP layer is mandatory
 # - Packet shall either be from client to server or from server to client
 #
-def check_tcpip_layer(packet, index):
+def check_tcpip_layer(packet, index, tcp):
 
 	from dissector_globals import addr_client, addr_server
 
@@ -42,10 +42,15 @@ def check_tcpip_layer(packet, index):
 		print("Error: packet %r doesn't have any IP layer" % index)
 		exit(0)
 
-	# we shall have a TCP layer !
-	if not packet.haslayer(TCP):
-		print("Error: packet %r doesn't have any TCP layer" % index)
-		exit(0)
+	# we shall have a TCP/UDP layer !
+	if tcp == True:
+		if not packet.haslayer(TCP):
+			print("Error: packet %r doesn't have any TCP layer" % index)
+			exit(0)
+	else:
+		if not packet.haslayer(UDP):
+			print("Error: packet %r doesn't have any UDP layer" % index)
+			exit(0)
 
 # Parse the header of a TLS record
 # This header shall contain:
