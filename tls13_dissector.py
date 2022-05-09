@@ -764,7 +764,7 @@ def decrypt_TLS_13_record(tls_record, key, iv):
 
 	# if no crypto stuff was provided, then no miracle can be done
 	if client_handshake_key == None:
-		print("no cryptographic material, cannot decrypt anything, too bad :-(")
+		print("  no cryptographic material, cannot decrypt anything, too bad :-(")
 		return
 
 	aead_ciphertext = tls_record
