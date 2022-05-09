@@ -211,7 +211,7 @@ def derivate_crypto_material():
 			return
 
 		for line in keyfilecontent:
-			print(line)
+
 			# read the SERVER_HANDSHAKE_TRAFFIC_SECRET
 			if line.find("SERVER_HANDSHAKE_TRAFFIC_SECRET") != -1:
 				server_handshake_line_token = line.split(' ')
@@ -632,6 +632,9 @@ def dissect_certificates_chain(hello_message):
 def dissect_certificate_verify(hello_message):
 	offset = 0
 
+def dissect_certificate_request(hello_message):
+	offset = 0
+
 # Parse a Finished message
 #
 def dissect_finished(hello_message):
@@ -657,7 +660,7 @@ def dissect_finished(hello_message):
 #
 def dissect_handshake_record(handshake_record):
 
-	print("  Handshake record")#;print("%r"%binascii.hexlify(handshake_record));exit()
+	print("  Handshake record")
 
 	# record total length
 	record_len = len(handshake_record)
