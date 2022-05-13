@@ -66,6 +66,9 @@ seq_num_srv = b''
 ## global variable to store the keylogfile name ##
 keylogfile = None
 
+## global variable to store the decrypted traffic ##
+current_plaintext = None
+
 ## set cipher_algorithm global state variable during ServerHello ##
 def get_cipher_algo():
 	global selected_cipher_suite
@@ -764,6 +767,7 @@ def decrypt_TLS_13_record(tls_record, key, iv):
 
 	global seq_num_cli
 	global seq_num_srv
+	global current_plaintext
 
 	# if no crypto stuff was provided, then no miracle can be done
 	if client_handshake_key == None:
@@ -811,6 +815,9 @@ def decrypt_TLS_13_record(tls_record, key, iv):
 	try:
 		tag = cipher.verify(aead_ciphertext[- cipher_algorithm_blocklen : ])
 		print("  GCM tag is correct :-)")
+
+		# allow an external app to access decrypted packet
+		current_plaintext = plaintext
 
 		# if the GCM tag agrees on it,
 		# we can analyze the decrypted content
