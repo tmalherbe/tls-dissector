@@ -66,6 +66,9 @@ seq_num_srv = b''
 ## global variable to store the keylogfile name ##
 keylogfile = None
 
+## global variable to store the decrypted traffic ##
+current_plaintext = None
+
 ## set cipher_algorithm global state variable during ServerHello ##
 def get_cipher_algo():
 	global selected_cipher_suite
@@ -210,53 +213,51 @@ def derivate_crypto_material():
 			fd.close()
 			return
 
-		# read the SERVER_HANDSHAKE_TRAFFIC_SECRET
-		server_handshake_line = keyfilecontent[1]
-		server_handshake_line_token = server_handshake_line.split(' ')
-		if len(server_handshake_line_token) < 3:
-			print("Error - %r is corrupted" % keylogfile)
-			fd.close()
-			return
+		for line in keyfilecontent:
 
-		server_handshake_secret_hex_raw = server_handshake_line_token[2]
-		server_handshake_secret_hex = server_handshake_secret_hex_raw.strip()
-		server_handshake_secret = binascii.unhexlify(server_handshake_secret_hex)
+			# read the SERVER_HANDSHAKE_TRAFFIC_SECRET
+			if line.find("SERVER_HANDSHAKE_TRAFFIC_SECRET") != -1:
+				server_handshake_line_token = line.split(' ')
+				if len(server_handshake_line_token) < 3:
+					print("Error - %r is corrupted" % keylogfile)
+					fd.close()
+					return
+				server_handshake_secret_hex_raw = server_handshake_line_token[2]
+				server_handshake_secret_hex = server_handshake_secret_hex_raw.strip()
+				server_handshake_secret = binascii.unhexlify(server_handshake_secret_hex)
 
-		# read the SERVER_TRAFFIC_SECRET
-		server_app_line = keyfilecontent[3]
-		server_app_line_token = server_app_line.split(' ')
-		if len(server_app_line_token) < 3:
-			print("Error - %r is corrupted" % keylogfile)
-			fd.close()
-			return
+			# read the SERVER_TRAFFIC_SECRET
+			if line.find("SERVER_TRAFFIC_SECRET_0") != -1:
+				server_app_line_token = line.split(' ')
+				if len(server_app_line_token) < 3:
+					print("Error - %r is corrupted" % keylogfile)
+					fd.close()
+					return
+				server_app_secret_hex_raw = server_app_line_token[2]
+				server_app_secret_hex = server_app_secret_hex_raw.strip()
+				server_app_secret = binascii.unhexlify(server_app_secret_hex)
 
-		server_app_secret_hex_raw = server_app_line_token[2]
-		server_app_secret_hex = server_app_secret_hex_raw.strip()
-		server_app_secret = binascii.unhexlify(server_app_secret_hex)
+			# read the CLIENT_HANDSHAKE_TRAFFIC_SECRET
+			if line.find("CLIENT_HANDSHAKE_TRAFFIC_SECRET") != -1:
+				client_handshake_line_token = line.split(' ')
+				if len(client_handshake_line_token) < 3:
+					print("Error - %r is corrupted" % keylogfile)
+					fd.close()
+					return
+				client_handshake_secret_hex_raw = client_handshake_line_token[2]
+				client_handshake_secret_hex = client_handshake_secret_hex_raw.strip()
+				client_handshake_secret = binascii.unhexlify(client_handshake_secret_hex)
 
-		# read the CLIENT_HANDSHAKE_TRAFFIC_SECRET
-		client_handshake_line = keyfilecontent[4]
-		client_handshake_line_token = client_handshake_line.split(' ')
-		if len(client_handshake_line_token) < 3:
-			print("Error - %r is corrupted" % keylogfile)
-			fd.close()
-			return
-
-		client_handshake_secret_hex_raw = client_handshake_line_token[2]
-		client_handshake_secret_hex = client_handshake_secret_hex_raw.strip()
-		client_handshake_secret = binascii.unhexlify(client_handshake_secret_hex)
-
-		# read the CLIENT_TRAFFIC_SECRET
-		client_app_line = keyfilecontent[5]
-		client_app_line_token = client_app_line.split(' ')
-		if len(client_app_line_token) < 3:
-			print("Error - %r is corrupted" % keylogfile)
-			fd.close()
-			return
-
-		client_app_secret_hex_raw = client_app_line_token[2]
-		client_app_secret_hex = client_app_secret_hex_raw.strip()
-		client_app_secret = binascii.unhexlify(client_app_secret_hex)
+			# read the CLIENT_TRAFFIC_SECRET
+			if line.find("CLIENT_TRAFFIC_SECRET_0") != -1:
+				client_app_line_token = line.split(' ')
+				if len(client_app_line_token) < 3:
+					print("Error - %r is corrupted" % keylogfile)
+					fd.close()
+					return
+				client_app_secret_hex_raw = client_app_line_token[2]
+				client_app_secret_hex = client_app_secret_hex_raw.strip()
+				client_app_secret = binascii.unhexlify(client_app_secret_hex)
 
 		fd.close()
 
@@ -634,6 +635,9 @@ def dissect_certificates_chain(hello_message):
 def dissect_certificate_verify(hello_message):
 	offset = 0
 
+def dissect_certificate_request(hello_message):
+	offset = 0
+
 # Parse a Finished message
 #
 def dissect_finished(hello_message):
@@ -659,7 +663,7 @@ def dissect_finished(hello_message):
 #
 def dissect_handshake_record(handshake_record):
 
-	print("  Handshake record")#;print("%r"%binascii.hexlify(handshake_record));exit()
+	print("  Handshake record")
 
 	# record total length
 	record_len = len(handshake_record)
@@ -763,6 +767,12 @@ def decrypt_TLS_13_record(tls_record, key, iv):
 
 	global seq_num_cli
 	global seq_num_srv
+	global current_plaintext
+
+	# if no crypto stuff was provided, then no miracle can be done
+	if client_handshake_key == None:
+		print("  no cryptographic material, cannot decrypt anything, too bad :-(")
+		return
 
 	aead_ciphertext = tls_record
 
@@ -805,6 +815,9 @@ def decrypt_TLS_13_record(tls_record, key, iv):
 	try:
 		tag = cipher.verify(aead_ciphertext[- cipher_algorithm_blocklen : ])
 		print("  GCM tag is correct :-)")
+
+		# allow an external app to access decrypted packet
+		current_plaintext = plaintext
 
 		# if the GCM tag agrees on it,
 		# we can analyze the decrypted content
