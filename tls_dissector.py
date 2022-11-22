@@ -769,6 +769,7 @@ def dissect_server_hello_done(tls_packet):
 #
 def dissect_handshake_record(handshake_record):
 
+	global handshake_has_started
 	print("  Handshake record")
 
 	# record total length
