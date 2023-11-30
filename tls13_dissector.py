@@ -45,7 +45,11 @@ client_handshake_secret = None
 ## global variable who becomes True juste after ServerHello           ##
 ## (at this point server starts sending encrypted handshake messages) ##
 ## and becomes false again when handshake is finished                 ##
-encrypted_handshake = False
+client_encrypted_handshake = False
+server_encrypted_handshake = False
+
+client_encrypted_app = False
+server_encrypted_app = False
 
 ## cryptographic material for handshake ##
 client_handshake_key = None
@@ -410,7 +414,7 @@ def dissect_client_hello(hello_message):
 
 	client_random = None
 	server_random = None
-	encrypted_handshake = False
+	client_encrypted_handshake = False
 
 	offset = 0
 
@@ -474,7 +478,8 @@ def dissect_server_hello(hello_message):
 	global selected_version
 	global server_random
 	global selected_cipher_suite
-	global encrypted_handshake
+	global client_encrypted_handshake
+	global server_encrypted_handshake
 
 	# TLS version selected by server
 	packet_version = int.from_bytes(hello_message[offset : offset + 2], 'big')
@@ -542,7 +547,8 @@ def dissect_server_hello(hello_message):
 		print("  TLSv1.3 hasn't been selected, analysis cannot continue with this tool...")
 		exit(0)
 
-	encrypted_handshake = True
+	client_encrypted_handshake = True
+	server_encrypted_handshake = True
 	derivate_crypto_material()
 	print("  ServerHello sent, subsequent handshake messages will be encrypted\n")
 	
@@ -645,16 +651,25 @@ def dissect_finished(hello_message):
 	global seq_num_cli
 	global seq_num_srv
 
-	global encrypted_handshake
-	global encrypted_app
+	global client_encrypted_handshake
+	global server_encrypted_handshake
+	global client_encrypted_app
+	global server_encrypted_app
 
 	if dissector_globals.is_from_client == True:
-		encrypted_handshake = False
-		encrypted_app = True
+		client_encrypted_handshake = False
+		client_encrypted_app = True
 
 		if debug == True:
-		    print("  dissect_finished, reinitialization of sequence numbers")
+		    print("  dissect_finished, reinitialization of client sequence numbers")
 		seq_num_cli = b'\x00\x00\x00\x00\x00\x00\x00\x00'
+
+	else:
+		server_encrypted_handshake = False
+		server_encrypted_app = True
+
+		if debug == True:
+		    print("  dissect_finished, reinitialization of server sequence numbers")
 		seq_num_srv = b'\x00\x00\x00\x00\x00\x00\x00\x00'
 
 
@@ -837,19 +852,20 @@ def dissect_application_record(tls_record,):
 
 	# if handshake is not finished yet,
 	# use handshake crypto material...
-	if encrypted_handshake == True:
-		if dissector_globals.is_from_client:
+	# otherwise use traffic crypto material
+	# crypto material is set according to the traffic direction
+	if dissector_globals.is_from_client == True:
+		if client_encrypted_handshake == True:
 			key = client_handshake_key
 			iv = client_handshake_iv
-		else:
+		elif client_encrypted_app == True:
+			key = client_app_key
+			iv = client_app_iv;
+	elif dissector_globals.is_from_client == False:
+		if server_encrypted_handshake == True:
 			key = server_handshake_key
 			iv = server_handshake_iv
-	# otherwise use traffic crypto material
-	elif encrypted_app == True:
-		if dissector_globals.is_from_client:
-			key = client_app_key
-			iv = client_app_iv
-		else:
+		elif server_encrypted_app == True:
 			key = server_app_key
 			iv = server_app_iv
 	else:
