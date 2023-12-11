@@ -1,4 +1,4 @@
-#!/usr/bin/python3.9
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
 import argparse
@@ -38,9 +38,10 @@ selected_version = None
 client_random = None
 server_random = None
 
-## A secret for the server, another one for the client ##
+## A secret for the server, another one for the client, a last one for export ##
 server_handshake_secret = None
 client_handshake_secret = None
+exporter_secret = None
 
 ## global variable who becomes True juste after ServerHello           ##
 ## (at this point server starts sending encrypted handshake messages) ##
@@ -180,12 +181,16 @@ def HKDF_Expand(PRK, info, L, algo):
 ## key derivation internals, 3 ##
 def HKDF_Expand_Label(secret, label, context, L, algo):
 	tmpLabel = b'tls13 ' + label
-	HkdfLabel = L.to_bytes(2, 'big') + (len(tmpLabel)).to_bytes(1, 'big') + tmpLabel + context
+	HkdfLabel = L.to_bytes(2, 'big') + (len(tmpLabel)).to_bytes(1, 'big') + tmpLabel + (len(context)).to_bytes(1, 'big') + context
 	#print("HkdfLabel : %r" % binascii.hexlify(HkdfLabel))
 	return HKDF_Expand(secret, HkdfLabel, L, algo)
 
 ## read secrets from keylogfile then generate keys&iv ##
 def derivate_crypto_material():
+
+	global client_handshake_secret
+	global server_handshake_secret
+	global exporter_secret
 
 	global client_handshake_key
 	global client_handshake_iv
@@ -263,6 +268,17 @@ def derivate_crypto_material():
 				client_app_secret_hex = client_app_secret_hex_raw.strip()
 				client_app_secret = binascii.unhexlify(client_app_secret_hex)
 
+			# read the EXPORTER_SECRET
+			if line.find("EXPORTER_SECRET") != -1:
+				exporter_line_token = line.split(' ')
+				if len(exporter_line_token) < 3:
+					print("Error - %r is corrupted" % keylogfile)
+					fd.close()
+					return
+				exporter_secret_hex_raw = exporter_line_token[2]
+				exporter_secret_hex = exporter_secret_hex_raw.strip()
+				exporter_secret = binascii.unhexlify(exporter_secret_hex)
+
 		fd.close()
 
 		if debug == True:
@@ -279,12 +295,12 @@ def derivate_crypto_material():
 		iv_label = b'iv'
 
 		# generate client handshake crypto stuffs
-		client_handshake_key = HKDF_Expand_Label(client_handshake_secret, key_label, b'\x00', cipher_algorithm_keylen, prf_algorithm)
-		client_handshake_iv = HKDF_Expand_Label(client_handshake_secret, iv_label, b'\x00', 12, prf_algorithm)
+		client_handshake_key = HKDF_Expand_Label(client_handshake_secret, key_label, b'', cipher_algorithm_keylen, prf_algorithm)
+		client_handshake_iv = HKDF_Expand_Label(client_handshake_secret, iv_label, b'', 12, prf_algorithm)
 
 		# generate server handshake crypto stuffs
-		server_handshake_key = HKDF_Expand_Label(server_handshake_secret, key_label, b'\x00', cipher_algorithm_keylen, prf_algorithm)
-		server_handshake_iv = HKDF_Expand_Label(server_handshake_secret, iv_label, b'\x00', 12, prf_algorithm)
+		server_handshake_key = HKDF_Expand_Label(server_handshake_secret, key_label, b'', cipher_algorithm_keylen, prf_algorithm)
+		server_handshake_iv = HKDF_Expand_Label(server_handshake_secret, iv_label, b'', 12, prf_algorithm)
 
 		if debug == True:
 			print("client handshake key : %r" % binascii.hexlify(client_handshake_key))
@@ -293,12 +309,12 @@ def derivate_crypto_material():
 			print("server handshake iv : %r" % binascii.hexlify(server_handshake_iv))
 
 		# generate client app crypto stuffs
-		client_app_key = HKDF_Expand_Label(client_app_secret, key_label, b'\x00', cipher_algorithm_keylen, prf_algorithm)
-		client_app_iv = HKDF_Expand_Label(client_app_secret, iv_label, b'\x00', 12, prf_algorithm)
+		client_app_key = HKDF_Expand_Label(client_app_secret, key_label, b'', cipher_algorithm_keylen, prf_algorithm)
+		client_app_iv = HKDF_Expand_Label(client_app_secret, iv_label, b'', 12, prf_algorithm)
 
 		# generate server app crypto stuffs
-		server_app_key = HKDF_Expand_Label(server_app_secret, key_label, b'\x00', cipher_algorithm_keylen, prf_algorithm)
-		server_app_iv = HKDF_Expand_Label(server_app_secret, iv_label, b'\x00', 12, prf_algorithm)
+		server_app_key = HKDF_Expand_Label(server_app_secret, key_label, b'', cipher_algorithm_keylen, prf_algorithm)
+		server_app_iv = HKDF_Expand_Label(server_app_secret, iv_label, b'', 12, prf_algorithm)
 
 		if debug == True:
 			print("client app key : %r" % binascii.hexlify(client_app_key))
